@@ -40,6 +40,62 @@ export interface Ball {
   k: number;
 }
 
+export type HatKind = "top" | "beanie" | "none";
+
+/** How a snowman is dressed. Rolled at random; right-click re-rolls it. */
+export interface Outfit {
+  hat: HatKind;
+  hatColor: string;
+  /** Jaunty angle, radians. */
+  hatTilt: number;
+  /** Scarf color, or null for no scarf. */
+  scarf: string | null;
+  scarfStripe: string;
+  /** Which side the scarf's tail hangs on. */
+  scarfSide: number;
+  nose: "carrot" | "coal";
+  cheeks: boolean;
+}
+
+const PALETTE = ["#d6403a", "#2f7de1", "#2fa36b", "#f2b632", "#8e5cd9", "#e0688f", "#1f9aa8"];
+const pick = <T,>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)];
+
+export function randomOutfit(prev?: Outfit): Outfit {
+  for (;;) {
+    const scarf = Math.random() < 0.8 ? pick(PALETTE) : null;
+    const o: Outfit = {
+      hat: pick(["top", "top", "beanie", "beanie", "beanie", "none"] as const),
+      hatColor: pick(PALETTE),
+      hatTilt: (Math.random() - 0.5) * 0.35,
+      scarf,
+      scarfStripe: Math.random() < 0.5 ? "#f6f1e7" : pick(PALETTE),
+      scarfSide: Math.random() < 0.5 ? -1 : 1,
+      nose: Math.random() < 0.82 ? "carrot" : "coal",
+      cheeks: Math.random() < 0.7,
+    };
+    // A re-roll should visibly change something.
+    if (!prev || o.hat !== prev.hat || o.scarf !== prev.scarf) return o;
+  }
+}
+
+/** A hat or scarf knocked loose, tumbling to the ground. */
+export interface Debris {
+  kind: "hat" | "scarf";
+  outfit: Outfit;
+  /** Size reference: the head's radius. */
+  r: number;
+  k: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  vr: number;
+  life: number;
+}
+
+export const DEBRIS_LIFE = 2.2;
+
 export interface Stack {
   /** Bottom first. */
   balls: Ball[];
@@ -58,6 +114,16 @@ export interface Stack {
   throwT: number;
   throwSide: number;
   throwCooldown: number;
+  outfit: Outfit;
+  /** Where the eyes look, -1..1 each axis. */
+  lookX: number;
+  lookY: number;
+  /** Seconds until the next blink, and how much of the current blink is left. */
+  blinkIn: number;
+  blinkT: number;
+  /** 0..1, eased: how much he's reacting to the cursor being near (wave, smile). */
+  hover: number;
+  wavePhase: number;
 }
 
 export interface Shot {
@@ -91,6 +157,7 @@ export class Yard {
   held: { ball: Ball; offY: number; tx: number; ty: number; rolling: boolean } | null = null;
   falling: Falling[] = [];
   shots: Shot[] = [];
+  debris: Debris[] = [];
 
   /** Building allowed (snowman setting, snow on, taskbar snow on). */
   enabled = true;
@@ -129,10 +196,12 @@ export class Yard {
 
   /** Needs frames (animation or interaction in progress). */
   get busy(): boolean {
-    if (this.held || this.pending || this.falling.length || this.shots.length || this.dwell > 0) return true;
+    if (this.held || this.pending || this.falling.length || this.shots.length || this.debris.length || this.dwell > 0)
+      return true;
     for (const s of this.stacks) {
       if (s.knockT >= 0 || s.throwT > 0 || (s.balls.length === 3 && s.accT < 1)) return true;
-      if (this.throwing && s.balls.length === 3) return true;
+      // A snowman is alive: he blinks, watches the cursor and waves.
+      if (s.balls.length === 3) return true;
     }
     return false;
   }
@@ -249,6 +318,16 @@ export class Yard {
     return true;
   }
 
+  /** Right-click on a snowman: dress him differently. */
+  restyle(x: number, y: number): boolean {
+    const hit = this.stackAt(x, y);
+    if (!hit || hit.stack.balls.length !== 3) return false;
+    hit.stack.outfit = randomOutfit(hit.stack.outfit);
+    hit.stack.accT = 0; // pop the new outfit in
+    this.dirty = true;
+    return true;
+  }
+
   pointerMove(x: number, y: number): void {
     this.setCursor(x, y);
     const p = this.pending;
@@ -344,12 +423,38 @@ export class Yard {
   }
 
   private burstStack(s: Stack): void {
+    if (s.balls.length === 3 && s.accT > 0.5) this.dropClothes(s);
     for (const b of s.balls) {
       const [x, y] = this.tilted(s, b);
       this.burstBall(x, y, b.r, b.k, s.knockDir);
     }
     this.stacks.splice(this.stacks.indexOf(s), 1);
     this.dirty = true;
+  }
+
+  /** Hat and scarf fly off as he topples. */
+  private dropClothes(s: Stack): void {
+    const top = s.balls[2];
+    const k = top.k;
+    const dir = s.knockDir;
+    const [hx, hy] = this.tilted(s, { ...top, y: top.y - top.r * 0.75 });
+    const [nx, ny] = this.tilted(s, { ...top, y: top.y + top.r * 0.85 });
+    const fly = (kind: "hat" | "scarf", x: number, y: number, up: number) =>
+      this.debris.push({
+        kind,
+        outfit: s.outfit,
+        r: top.r,
+        k,
+        x,
+        y,
+        vx: dir * (120 + Math.random() * 120) * k,
+        vy: -up * k,
+        rot: s.tilt,
+        vr: dir * (4 + Math.random() * 5),
+        life: DEBRIS_LIFE,
+      });
+    if (s.outfit.hat !== "none") fly("hat", hx, hy, 260 + Math.random() * 120);
+    if (s.outfit.scarf) fly("scarf", nx, ny, 140 + Math.random() * 80);
   }
 
   /** Remove everything as falling snow (settings off, shake). */
@@ -361,6 +466,7 @@ export class Yard {
     this.held = null;
     this.pending = null;
     this.shots = [];
+    this.debris = [];
     this.armed = false;
     this.dwell = 0;
     this.dirty = true;
@@ -395,6 +501,7 @@ export class Yard {
           s.face = face;
           this.dirty = true;
         }
+        this.animateLife(s, dt);
         if (s.throwT > 0) {
           s.throwT = Math.max(0, s.throwT - dt);
           this.dirty = true;
@@ -403,10 +510,78 @@ export class Yard {
       }
     }
 
+    this.updateDebris(dt);
     this.updateHeld();
     this.updateFalling(dt);
     this.updateShots(dt);
     this.updateArming(dt);
+  }
+
+  /** Eyes follow the cursor, he blinks, and waves when you come close. */
+  private animateLife(s: Stack, dt: number): void {
+    const top = s.balls[2];
+    const r = top.r;
+    const dx = this.cursorX - top.x;
+    const dy = this.cursorY - top.y;
+    const d = Math.hypot(dx, dy) || 1;
+    // Full deflection once the cursor is a few head-widths away.
+    const reach = Math.min(1, d / (r * 4));
+    const lx = (dx / d) * reach;
+    const ly = (dy / d) * reach;
+    if (Math.abs(lx - s.lookX) > 0.04 || Math.abs(ly - s.lookY) > 0.04) {
+      s.lookX = lx;
+      s.lookY = ly;
+      this.dirty = true;
+    }
+
+    if (s.blinkT > 0) {
+      s.blinkT -= dt;
+      if (s.blinkT <= 0) this.dirty = true;
+    } else {
+      s.blinkIn -= dt;
+      if (s.blinkIn <= 0) {
+        s.blinkT = 0.13;
+        // Now and then a quick double blink.
+        s.blinkIn = Math.random() < 0.15 ? 0.25 : 2.5 + Math.random() * 4;
+        this.dirty = true;
+      }
+    }
+
+    // "Near" = within a couple of head-widths of the snowman's outline.
+    const base = s.balls[0];
+    const near =
+      Math.abs(this.cursorX - base.x) < base.r + r * 3 &&
+      this.cursorY > top.y - r * 4 &&
+      this.cursorY < base.y + base.r + r;
+    const target = near ? 1 : 0;
+    const next = s.hover + (target - s.hover) * Math.min(1, dt * 5);
+    if (Math.abs(next - s.hover) > 0.002 || (next > 0.02 && next < 0.98)) this.dirty = true;
+    s.hover = Math.abs(next - target) < 0.002 ? target : next;
+    if (s.hover > 0.02) {
+      s.wavePhase += dt * 9;
+      this.dirty = true;
+    }
+  }
+
+  private updateDebris(dt: number): void {
+    for (let i = this.debris.length - 1; i >= 0; i--) {
+      const d = this.debris[i];
+      d.life -= dt;
+      d.vy += GRAVITY * 0.55 * d.k * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.rot += d.vr * dt;
+      const s = this.surface(d.x);
+      if (s && d.y > s.top - d.r * 0.15 && d.vy > 0) {
+        // Bounce once, then settle and slide to a stop.
+        d.y = s.top - d.r * 0.15;
+        d.vy = Math.abs(d.vy) > 120 * d.k ? -d.vy * 0.3 : 0;
+        d.vx *= 0.55;
+        d.vr *= 0.4;
+      }
+      this.dirty = true;
+      if (d.life <= 0) this.debris.splice(i, 1);
+    }
   }
 
   private updateArming(dt: number): void {
@@ -513,6 +688,13 @@ export class Yard {
           throwT: 0,
           throwSide: 1,
           throwCooldown: 3 + Math.random() * 4,
+          outfit: randomOutfit(),
+          lookX: 0,
+          lookY: 0,
+          blinkIn: 1 + Math.random() * 3,
+          blinkT: 0,
+          hover: 0,
+          wavePhase: 0,
         });
         this.falling.splice(i, 1);
       }

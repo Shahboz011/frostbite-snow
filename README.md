@@ -20,7 +20,8 @@ click-through, always-on-top overlay that spans every monitor.
 Things to try:
 - Drag a window slowly, then flick it.
 - Rest the mouse on the snow above the taskbar, then drag to roll a
-  snowball. Stack three to make a snowman, and click him to knock him over.
+  snowball. Stack three to make a snowman. Hover near him (he waves),
+  right-click him for a new outfit, and click to knock him over.
 - Switch to *Blizzard* in the tray menu.
 
 Uninstall from Settings → Apps.
@@ -170,8 +171,14 @@ their monitor's DPI scale at spawn, so they look the same size on a 100% and a
   carry it. Drop it onto a bigger ball to stack it. Three stacked balls become
   a snowman: coal eyes and smile, buttons, twig arms, and a carrot nose that
   turns toward the cursor.
-- **Knocking over.** Click a snowman or ball without dragging. It tips over
-  and bursts into clumps, which settle back into the piles.
+- **Outfits.** Every snowman gets a random outfit: a top hat or a knit beanie
+  with a pom-pom (or no hat), a striped scarf with a hanging tail, rosy cheeks,
+  and a carrot or coal nose. **Right-click** a snowman to dress him again.
+- **Alive.** His eyes follow the cursor and he blinks (now and then a double
+  blink). Move the cursor close and he waves at you, smiling wider.
+- **Knocking over.** Click a snowman or ball without dragging. It tips over,
+  the hat and scarf fly off and tumble to the ground, and the snow bursts into
+  clumps that settle back into the piles.
 - **Snowball fights** (tray toggle). Every 7–16 s a finished snowman swings an
   arm and lobs a snowball in an arc at the cursor. It splats into snow.
 - **Mouse handling.** The frontend registers hit regions with Rust: one per

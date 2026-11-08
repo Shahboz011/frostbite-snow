@@ -117,8 +117,18 @@ function installPointer(): void {
   window.addEventListener(
     "pointerdown",
     (e) => {
-      if (e.button !== 0) return;
       const [x, y] = toLayout(e);
+      if (e.button === 2) {
+        // Right-click a snowman: new outfit.
+        yard.setCursor(x, y);
+        if (yard.enabled && yard.restyle(x, y)) {
+          e.preventDefault();
+          e.stopPropagation();
+          wake();
+        }
+        return;
+      }
+      if (e.button !== 0) return;
       yard.setCursor(x, y);
       if (!yard.wants(x, y) || !yard.pointerDown(x, y)) return;
       e.preventDefault();
@@ -148,6 +158,11 @@ function installPointer(): void {
     wake();
   };
   window.addEventListener("pointerup", up, { capture: true });
+  // No browser context menu over the overlay (right-click restyles snowmen).
+  window.addEventListener("contextmenu", (e) => {
+    const [x, y] = toLayout(e as PointerEvent);
+    if (yard.stackAt(x, y)) e.preventDefault();
+  });
   window.addEventListener("pointercancel", up, { capture: true });
 }
 
