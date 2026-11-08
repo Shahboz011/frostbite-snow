@@ -3,7 +3,8 @@ import { FrameLoop } from "./loop";
 import { PileRenderer } from "./snow/piles";
 import { createRenderer } from "./snow/renderer";
 import { MAX_FLAKES, SnowSim } from "./snow/sim";
-import type { Intensity, Layout, Surfaces } from "./types";
+import { DEFAULT_SETTINGS } from "./types";
+import type { Layout, Power, Settings, Surfaces } from "./types";
 
 const canvas = document.getElementById("snow") as HTMLCanvasElement;
 const pileCanvas = document.getElementById("piles") as HTMLCanvasElement;
@@ -19,11 +20,17 @@ const PILE_REDRAW_INTERVAL = 0.05;
 
 let layout: Layout;
 let surfaces: Surfaces = { windows: [], taskbars: [] };
+let settings: Settings = { ...DEFAULT_SETTINGS };
+let power: Power = { paused: false, battery: false };
 let debug = false;
-let clock = 0;
 let pileTimer = 0;
 
 const now = () => performance.now() / 1000;
+
+/** Start rendering unless paused (fullscreen app / lock screen). */
+function wake(): void {
+  if (!power.paused) loop.wake();
+}
 
 function resize(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -35,7 +42,7 @@ function resize(): void {
   renderer.resize(w, h, s);
   piles.resize(w, h, s);
   if (debug) drawMonitorOutlines();
-  loop.wake();
+  wake();
 }
 
 function applyLayout(l: Layout): void {
@@ -48,7 +55,29 @@ function applyLayout(l: Layout): void {
 function applySurfaces(s: Surfaces): void {
   surfaces = s;
   sim.ledges.sync(s, now());
-  loop.wake();
+  wake();
+}
+
+/** 30 fps on battery and for light snow (slow flakes look the same), else 60. */
+function updateFpsCap(): void {
+  loop.fpsCap = power.battery || settings.intensity === "light" ? 30 : 60;
+}
+
+function applySettings(s: Settings): void {
+  settings = s;
+  sim.settings.enabled = s.enabled;
+  sim.settings.intensity = s.intensity;
+  sim.settings.wind = s.wind;
+  sim.ledges.setOptions({ windows: s.snowOnWindows, ground: s.snowOnTaskbar, icicles: s.icicles }, now());
+  updateFpsCap();
+  wake();
+}
+
+function applyPower(p: Power): void {
+  power = p;
+  updateFpsCap();
+  if (p.paused) loop.stop();
+  else wake();
 }
 
 function drawMonitorOutlines(): void {
@@ -72,7 +101,6 @@ let fpsTime = 0;
 let pileDraws = 0;
 
 const loop = new FrameLoop((dt) => {
-  clock += dt;
   sim.update(dt);
   renderer.draw(sim.pool);
 
@@ -88,16 +116,19 @@ const loop = new FrameLoop((dt) => {
     if (fpsTime >= 0.5) {
       const fps = fpsFrames / fpsTime;
       debugEl.textContent =
-        `${renderer.kind}  ${fps.toFixed(0)} fps  cap ${loop.fpsCap}\n` +
-        `flakes ${sim.pool.count}  ${sim.settings.intensity}  wind ${sim.windNow.toFixed(0)} px/s\n` +
+        `${renderer.kind}  ${fps.toFixed(0)} fps  cap ${loop.fpsCap}${power.battery ? " (battery)" : ""}\n` +
+        `snow ${settings.enabled ? "on" : "off"}  flakes ${sim.pool.count}  ${settings.intensity}  wind ${sim.windNow.toFixed(0)} px/s\n` +
         `ledges ${sim.ledges.list.length}  pile redraws ${(pileDraws / fpsTime).toFixed(0)}/s\n` +
-        `monitors ${layout.monitors.length}  ${layout.width}×${layout.height}`;
+        `monitors ${layout.monitors.length}  ${layout.width}×${layout.height}` +
+        (bridge.native ? "" : "\nkeys: S 1 2 3 ←→ W T I X P B");
       fpsFrames = 0;
       fpsTime = 0;
       pileDraws = 0;
     }
   }
-  return !sim.idle;
+  const more = !sim.idle;
+  if (!more && debug) debugEl.textContent += "\n(idle: render loop stopped)";
+  return more;
 });
 
 async function start(): Promise<void> {
@@ -105,30 +136,29 @@ async function start(): Promise<void> {
   debug = boot.debug;
   debugEl.style.display = debug ? "block" : "none";
   surfaces = boot.surfaces;
+  power = boot.power;
   applyLayout(boot.layout);
+  applySettings(boot.settings);
   if (debug) {
     // Console access for tuning and perf checks.
     Object.assign(window, { __frostbite: { sim, renderer, piles, loop, layout: () => layout } });
   }
 
-  // Browser preview knobs: ?intensity=blizzard&wind=-0.5
-  if (!bridge.native) {
-    const q = new URLSearchParams(location.search);
-    const i = q.get("intensity") as Intensity | null;
-    if (i && i in { light: 1, normal: 1, blizzard: 1 }) sim.settings.intensity = i;
-    const w = q.get("wind");
-    if (w !== null) sim.settings.wind = Math.max(-1, Math.min(1, Number(w)));
-  }
-
   bridge.onLayout(applyLayout);
   bridge.onSurfaces(applySurfaces);
+  bridge.onSettings(applySettings);
+  bridge.onPower(applyPower);
+  bridge.onShake(() => {
+    sim.ledges.shakeAll();
+    wake();
+  });
   bridge.onCursor((c) => sim.setCursor(c));
   window.addEventListener("resize", resize);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) loop.stop();
-    else loop.wake();
+    else wake();
   });
-  loop.wake();
+  applyPower(power);
 }
 
 void start();

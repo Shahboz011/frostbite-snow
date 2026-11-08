@@ -2,13 +2,15 @@ use frostbite_platform::{Rect, Surfaces};
 use serde::Serialize;
 use tauri::State;
 
-use crate::{layout::Layout, AppState};
+use crate::{layout::Layout, settings::Settings, state::Power, AppState};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Boot {
     layout: Layout,
     surfaces: Surfaces,
+    settings: Settings,
+    power: Power,
     debug: bool,
     platform: &'static str,
 }
@@ -19,6 +21,8 @@ pub fn boot(state: State<'_, AppState>) -> Boot {
     Boot {
         layout: state.layout.lock().unwrap().clone(),
         surfaces: state.surfaces.lock().unwrap().clone(),
+        settings: state.settings.lock().unwrap().clone(),
+        power: *state.power.lock().unwrap(),
         debug: state.debug,
         platform: state.platform.name(),
     }

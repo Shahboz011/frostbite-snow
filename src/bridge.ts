@@ -5,7 +5,8 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { Boot, CursorPos, Layout, Rect, Surfaces } from "./types";
+import { DEFAULT_SETTINGS } from "./types";
+import type { Boot, CursorPos, Intensity, Layout, Power, Rect, Settings, Surfaces } from "./types";
 
 export interface Bridge {
   readonly native: boolean;
@@ -13,6 +14,10 @@ export interface Bridge {
   onLayout(cb: (l: Layout) => void): void;
   onSurfaces(cb: (s: Surfaces) => void): void;
   onCursor(cb: (c: CursorPos) => void): void;
+  onSettings(cb: (s: Settings) => void): void;
+  onPower(cb: (p: Power) => void): void;
+  /** Tray "Shake off all snow". */
+  onShake(cb: () => void): void;
   setHitRegions(regions: Rect[], capture: boolean): void;
 }
 
@@ -34,6 +39,15 @@ class TauriBridge implements Bridge {
   onCursor(cb: (c: CursorPos) => void) {
     void listen<CursorPos>("frostbite://cursor", (e) => cb(e.payload));
   }
+  onSettings(cb: (s: Settings) => void) {
+    void listen<Settings>("frostbite://settings", (e) => cb(e.payload));
+  }
+  onPower(cb: (p: Power) => void) {
+    void listen<Power>("frostbite://power", (e) => cb(e.payload));
+  }
+  onShake(cb: () => void) {
+    void listen("frostbite://shake", () => cb());
+  }
   setHitRegions(regions: Rect[], capture: boolean) {
     void invoke("set_hit_regions", { regions, capture });
   }
@@ -44,6 +58,8 @@ class TauriBridge implements Bridge {
  * - `?monitors=2`: two fake monitors of different heights and DPI.
  * - `?windows=N` (default 3): draggable fake windows (drag the title bar,
  *   click to raise, × to close, double-click the desktop to add one).
+ * - Keys stand in for the tray menu: S snow, 1/2/3 intensity, ←/→ wind,
+ *   W windows, T taskbar, I icicles, X shake off, P pause (fullscreen), B battery.
  */
 class BrowserBridge implements Bridge {
   readonly native = false;
@@ -53,6 +69,11 @@ class BrowserBridge implements Bridge {
   private taskbar = document.createElement("div");
   private nextId = 1;
   private emitQueued = false;
+  private settings: Settings = { ...DEFAULT_SETTINGS, wind: 0.15 };
+  private power: Power = { paused: false, battery: false };
+  private settingsCbs: ((s: Settings) => void)[] = [];
+  private powerCbs: ((p: Power) => void)[] = [];
+  private shakeCbs: (() => void)[] = [];
 
   constructor() {
     document.body.classList.add("preview");
@@ -69,7 +90,13 @@ class BrowserBridge implements Bridge {
     document.addEventListener("dblclick", (e) => {
       if (e.target === document.body || e.target === this.desk) this.addWindow(e.clientX - 150, e.clientY);
     });
-    const n = Number(new URLSearchParams(location.search).get("windows") ?? "3");
+    const q = new URLSearchParams(location.search);
+    const qi = q.get("intensity");
+    if (qi === "light" || qi === "normal" || qi === "blizzard") this.settings.intensity = qi;
+    const qw = q.get("wind");
+    if (qw !== null) this.settings.wind = Math.max(-1, Math.min(1, Number(qw)));
+    window.addEventListener("keydown", (e) => this.onKey(e));
+    const n = Number(q.get("windows") ?? "3");
     const W = window.innerWidth;
     const H = window.innerHeight;
     const presets = [
@@ -82,6 +109,33 @@ class BrowserBridge implements Bridge {
       const p = presets[i % presets.length];
       this.addWindow(W * p[0], H * p[1], W * p[2], H * p[3]);
     }
+  }
+
+  private onKey(e: KeyboardEvent): void {
+    const s = { ...this.settings };
+    const levels: Intensity[] = ["light", "normal", "blizzard"];
+    switch (e.key.toLowerCase()) {
+      case "s": s.enabled = !s.enabled; break;
+      case "1": case "2": case "3": s.intensity = levels[Number(e.key) - 1]; break;
+      case "arrowleft": s.wind = Math.max(-1, Math.round(s.wind * 3 - 1) / 3); break;
+      case "arrowright": s.wind = Math.min(1, Math.round(s.wind * 3 + 1) / 3); break;
+      case "w": s.snowOnWindows = !s.snowOnWindows; break;
+      case "t": s.snowOnTaskbar = !s.snowOnTaskbar; break;
+      case "i": s.icicles = !s.icicles; break;
+      case "x": for (const cb of this.shakeCbs) cb(); return;
+      case "p": this.setPower({ ...this.power, paused: !this.power.paused }); return;
+      case "b": this.setPower({ ...this.power, battery: !this.power.battery }); return;
+      default: return;
+    }
+    this.settings = s;
+    for (const cb of this.settingsCbs) cb(s);
+  }
+
+  private setPower(p: Power): void {
+    this.power = p;
+    // Mirror the native overlay being hidden while paused.
+    for (const c of document.querySelectorAll<HTMLCanvasElement>("canvas")) c.style.visibility = p.paused ? "hidden" : "";
+    for (const cb of this.powerCbs) cb(p);
   }
 
   private dpr() {
@@ -188,7 +242,14 @@ class BrowserBridge implements Bridge {
   async boot(): Promise<Boot> {
     const layout = this.fakeLayout();
     this.placeTaskbar(layout);
-    return { layout, surfaces: this.surfaces(), debug: true, platform: "browser" };
+    return {
+      layout,
+      surfaces: this.surfaces(),
+      settings: { ...this.settings },
+      power: { ...this.power },
+      debug: true,
+      platform: "browser",
+    };
   }
   onLayout(cb: (l: Layout) => void) {
     this.layoutCbs.push(cb);
@@ -202,6 +263,15 @@ class BrowserBridge implements Bridge {
       cb({ x: e.clientX * dpr, y: e.clientY * dpr });
     });
     window.addEventListener("pointerleave", () => cb({ x: -1e6, y: -1e6 }));
+  }
+  onSettings(cb: (s: Settings) => void) {
+    this.settingsCbs.push(cb);
+  }
+  onPower(cb: (p: Power) => void) {
+    this.powerCbs.push(cb);
+  }
+  onShake(cb: () => void) {
+    this.shakeCbs.push(cb);
   }
   setHitRegions() {}
 }

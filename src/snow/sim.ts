@@ -137,6 +137,9 @@ export class SnowSim {
       }
     }
     ledges.step();
+    // Melt last, so a flake landing this frame can't leave a bump behind
+    // after the loop decides it's idle.
+    if (!this.settings.enabled) ledges.melt(dt);
   }
 
   /** A clump of pile snow knocked loose (window moved/closed, end spill). */

@@ -6,6 +6,7 @@
 import { Ledge, LedgeSet } from "./ledges";
 
 const MIN_H = 0.35;
+const ICICLE_GRADIENT_LEN = 18;
 
 export class PileRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -50,7 +51,7 @@ export class PileRenderer {
         l.x + (l.d0 - 2) * l.colW,
         l.y - l.maxH - pad,
         (l.d1 - l.d0 + 5) * l.colW,
-        l.maxH + 2 * pad,
+        l.maxH + pad + l.below,
       );
       l.d0 = 1 << 30;
       l.d1 = -1;
@@ -74,7 +75,7 @@ export class PileRenderer {
     ctx.clearRect(x0, y0, x1 - x0, y1 - y0);
     for (const l of set.list) {
       const pad = 4 * l.scale;
-      if (l.x + l.width + pad < x0 || l.x - pad > x1 || l.y + pad < y0 || l.y - l.maxH - pad > y1) continue;
+      if (l.x + l.width + pad < x0 || l.x - pad > x1 || l.y + l.below < y0 || l.y - l.maxH - pad > y1) continue;
       this.drawLedge(l);
     }
     ctx.restore();
@@ -120,6 +121,35 @@ export class PileRenderer {
     ctx.lineWidth = 1.25 * l.scale;
     ctx.strokeStyle = "rgba(92, 115, 150, 0.75)";
     ctx.lineJoin = "round";
+    ctx.stroke();
+    if (l.hang) this.drawIcicles(l);
+  }
+
+  /** Icicles hanging from the taskbar's top edge; length tracks the snow above. */
+  private drawIcicles(l: Ledge): void {
+    const ctx = this.ctx;
+    const k = l.scale;
+    ctx.beginPath();
+    let any = false;
+    for (let i = 0; i < l.icCol.length; i++) {
+      const len = l.icicleLength(i);
+      if (len < 2 * k) continue;
+      const cx = l.x + (l.icCol[i] + 0.5) * l.colW;
+      const hw = (1.6 + len * 0.12) * l.icW[i] * k;
+      ctx.moveTo(cx - hw, l.y);
+      ctx.quadraticCurveTo(cx - hw * 0.35, l.y + len * 0.55, cx, l.y + len);
+      ctx.quadraticCurveTo(cx + hw * 0.35, l.y + len * 0.55, cx + hw, l.y);
+      ctx.closePath();
+      any = true;
+    }
+    if (!any) return;
+    const g = ctx.createLinearGradient(0, l.y, 0, l.y + ICICLE_GRADIENT_LEN * k);
+    g.addColorStop(0, "rgba(240, 248, 255, 0.95)");
+    g.addColorStop(1, "rgba(190, 220, 250, 0.45)");
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 0.8 * k;
+    ctx.strokeStyle = "rgba(150, 185, 225, 0.8)";
     ctx.stroke();
   }
 }

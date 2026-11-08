@@ -6,6 +6,7 @@
 use std::ffi::c_void;
 
 mod surfaces;
+mod system;
 
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
@@ -22,7 +23,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOSIZE, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
-use crate::{MonitorInfo, NativeHandle, Platform, PlatformError, Point, Rect, Result, Surfaces};
+use crate::{
+    MonitorInfo, NativeHandle, Platform, PlatformError, Point, Rect, Result, Surfaces, SystemState,
+};
 
 pub struct WindowsPlatform;
 
@@ -134,5 +137,22 @@ impl Platform for WindowsPlatform {
 
     fn surfaces(&self, own: Option<NativeHandle>) -> Surfaces {
         surfaces::surfaces(own)
+    }
+
+    fn system_state(&self, own: Option<NativeHandle>) -> SystemState {
+        system::state(own)
+    }
+
+    fn set_overlay_visible(&self, window: NativeHandle, visible: bool) -> bool {
+        system::set_visible(window, visible);
+        true
+    }
+
+    fn autostart_enabled(&self) -> Option<bool> {
+        Some(system::autostart_enabled())
+    }
+
+    fn set_autostart(&self, enable: bool) -> Result<()> {
+        system::set_autostart(enable)
     }
 }

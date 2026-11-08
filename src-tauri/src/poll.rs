@@ -8,7 +8,7 @@ use frostbite_platform::Point;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::{overlay, AppState, OVERLAY_LABEL};
+use crate::{overlay, state::Power, AppState, OVERLAY_LABEL};
 
 const TICK: Duration = Duration::from_millis(33);
 /// Surfaces every 3rd tick (~100 ms) when the desktop is still...
@@ -16,6 +16,8 @@ const SURFACE_EVERY: u32 = 3;
 /// ...and every tick for this many ticks (~1 s) after something changed, so
 /// snow riding a slowly moving window doesn't stutter.
 const HOT_TICKS: u32 = 30;
+/// Fullscreen / lock / battery every ~0.5 s.
+const SYSTEM_EVERY: u32 = 15;
 /// Housekeeping every ~2 s.
 const SLOW_EVERY: u32 = 60;
 
@@ -42,6 +44,24 @@ fn run<R: Runtime>(app: AppHandle<R>) {
         std::thread::sleep(TICK);
         tick = tick.wrapping_add(1);
         let state = app.state::<AppState>();
+
+        // --- fullscreen / lock / power ---------------------------------------
+        if tick % SYSTEM_EVERY == 1 {
+            let own = *state.overlay.lock().unwrap();
+            let next = Power::from_system(state.platform.system_state(own));
+            let prev = std::mem::replace(&mut *state.power.lock().unwrap(), next);
+            if next != prev {
+                if next.paused != prev.paused {
+                    overlay::set_visible(&app, !next.paused);
+                }
+                let _ = app.emit_to(OVERLAY_LABEL, "frostbite://power", next);
+            }
+        }
+        if state.power.lock().unwrap().paused {
+            // Nothing to track while hidden; just wait for the pause to end.
+            continue;
+        }
+
         let (ox, oy) = {
             let l = state.layout.lock().unwrap();
             (l.origin_x, l.origin_y)

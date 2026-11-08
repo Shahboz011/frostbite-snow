@@ -12,7 +12,7 @@ click-through, always-on-top overlay that spans every monitor.
 |---|---|---|
 | M1 | Transparent click-through overlay, falling snow on all monitors | ✅ code complete, needs a Windows run-through |
 | M2 | Window + taskbar detection, piles, snow falling off moving windows | ✅ code complete, needs a Windows run-through |
-| M3 | Tray menu, settings, autostart, fullscreen pause, battery mode | ⏳ |
+| M3 | Tray menu, settings, autostart, fullscreen pause, battery mode | ✅ code complete, needs a Windows run-through |
 | M4 | Snowman building / knocking over / snowballs | ⏳ |
 | M5 | Desktop icon detection | ⏳ |
 | M6 | MSIX (Store) + NSIS packaging | ⏳ |
@@ -24,12 +24,15 @@ crates/frostbite-platform/   OS layer behind the `Platform` trait
   src/lib.rs                 trait + shared types (Rect, MonitorInfo, NativeHandle)
   src/windows/mod.rs         Win32 backend: monitors, cursor, overlay styles
   src/windows/surfaces.rs    EnumWindows + DWM frame bounds, taskbars
+  src/windows/system.rs      fullscreen, lock screen, power, autostart, show/hide
   src/stub.rs                non-Windows dev stub (macOS backend goes here later)
 src-tauri/                   Tauri app
   src/overlay.rs             overlay window setup, bounds, click-through toggling
   src/poll.rs                30 Hz cursor/hit-testing, 10–30 Hz surfaces, 2 s housekeeping
   src/layout.rs              virtual-screen layout (unit tested)
   src/commands.rs            IPC: boot, set_hit_regions
+  src/settings.rs            settings JSON (unit tested)
+  src/tray.rs                tray icon + menu
 src/                         frontend
   bridge.ts                  Tauri IPC, with a browser mock for visual tuning
   loop.ts                    rAF loop: FPS cap, stops entirely when idle
@@ -95,6 +98,39 @@ their monitor's DPI scale at spawn, so they look the same size on a 100% and a
   along. Faster moves, resizes, closing, minimizing and maximizing turn the
   pile into falling clumps that land on whatever is below.
 
+### Tray, settings and power (M3)
+
+- **Tray icon.** Left-click toggles snow. Right-click opens the menu: Snow,
+  Intensity, Wind, Snow on windows / taskbar / desktop icons, Snowman,
+  Icicles, Snowball fights, Launch at startup, Shake off all snow, Quit.
+  - Tray menus can't hold a real slider, so **Wind** is a 7-step submenu
+    (← Strong … Calm … Strong →).
+  - Snowman, snowball fights and desktop icons are stored now and start
+    working in M4 and M5.
+- **Settings file.** `%APPDATA%\app.frostbite.desktop\settings.json`, written
+  atomically (temp file + rename). Missing or unknown fields fall back to
+  defaults, so the file stays compatible as settings are added.
+- **Snow off.** Falling flakes finish, the piles melt in about 4 s, and then
+  the render loop stops completely.
+- **Pause.** The overlay hides (`SW_HIDE`, never activated) and Rust stops
+  polling windows and the cursor while:
+  - a fullscreen app, game or presentation is running. This is detected two
+    ways: `SHQueryUserNotificationState` reports busy, D3D fullscreen or
+    presentation mode, or the foreground window covers its whole monitor
+    (borderless games, F11 browsers).
+  - the screen is locked (or the UAC secure desktop is showing), detected
+    because the input desktop can't be opened.
+- **Frame rate.** Capped at 30 fps on battery or battery saver, and for
+  *light* snow (slow flakes look identical at 30 fps, and it halves the
+  compositor work). Everything else runs at 60.
+- **Launch at startup.** Writes `HKCU\…\CurrentVersion\Run\Frostbite` with
+  `--autostart`. The registry, not the JSON file, is the source of truth. The
+  MSIX build will use a `windows.startupTask` instead (M6).
+- **Single instance.** Launching a second copy just turns snow back on in the
+  running one.
+- **Icicles.** Hang from the top edge of a bottom taskbar and grow as snow
+  piles above them.
+
 ## Prerequisites (Windows)
 
 - Windows 10 1809+ or Windows 11, x64
@@ -114,8 +150,8 @@ npm run tauri dev
 ```
 
 Debug builds show an FPS / flake-count box in the top-left corner. To get it
-in a release build, set `FROSTBITE_DEBUG=1`. M3 adds a tray icon; until then,
-quit with `Ctrl+C` in the terminal (or end `frostbite.exe` in Task Manager).
+in a release build, set `FROSTBITE_DEBUG=1`. Use the tray icon to change
+settings or quit.
 
 ### Tuning visuals in a browser (any OS)
 
@@ -125,7 +161,9 @@ npm run dev
 
 Open <http://localhost:1420/?intensity=blizzard&wind=0.4&monitors=2>. The page
 fakes a monitor layout (`monitors=2` gives two monitors of different heights
-and DPI), a taskbar, and `windows=N` (default 3) fake windows. Drag a title
+and DPI), a taskbar, and `windows=N` (default 3) fake windows. Keys stand in
+for the tray: `S` snow, `1`/`2`/`3` intensity, `←`/`→` wind, `W` windows, `T`
+taskbar, `I` icicles, `X` shake off, `P` pause (fullscreen), `B` battery. Drag a title
 bar slowly to carry the snow along, flick it to shake the snow off, click to
 raise, use × to close, and double-click the background to add a window. The
 real mouse drives flake repulsion. In the console, `__frostbite` exposes the

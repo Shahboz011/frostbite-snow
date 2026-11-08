@@ -76,6 +76,18 @@ impl Surfaces {
     }
 }
 
+/// Things that pause the snow or change its frame rate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemState {
+    /// A fullscreen app, game or presentation is in the foreground.
+    pub fullscreen: bool,
+    /// Lock screen (or UAC secure desktop) is showing.
+    pub locked: bool,
+    /// Running on battery or with battery saver on.
+    pub on_battery: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct Point {
     pub x: i32,
@@ -147,6 +159,17 @@ pub trait Platform: Send + Sync {
     /// Skips cloaked, minimized, tool and click-through windows, shell
     /// windows, and `own`. Called ~10 Hz, so it must stay cheap.
     fn surfaces(&self, own: Option<NativeHandle>) -> Surfaces;
+
+    /// Fullscreen / lock / power. Called ~2 Hz.
+    fn system_state(&self, own: Option<NativeHandle>) -> SystemState;
+
+    /// Show or hide the overlay without activating it. Returns false if the
+    /// backend can't, and the app falls back to the toolkit.
+    fn set_overlay_visible(&self, window: NativeHandle, visible: bool) -> bool;
+
+    /// Launch-at-login state. `None` = not supported on this backend.
+    fn autostart_enabled(&self) -> Option<bool>;
+    fn set_autostart(&self, enable: bool) -> Result<()>;
 }
 
 /// The backend for the current OS.

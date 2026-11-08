@@ -33,9 +33,46 @@ export interface Surfaces {
   taskbars: Rect[];
 }
 
+/** Mirrors src-tauri/src/settings.rs. */
+export interface Settings {
+  enabled: boolean;
+  intensity: Intensity;
+  /** -1 (strong, blowing left) … 1 (strong, blowing right). */
+  wind: number;
+  snowOnWindows: boolean;
+  snowOnTaskbar: boolean;
+  snowOnIcons: boolean;
+  snowman: boolean;
+  icicles: boolean;
+  snowballs: boolean;
+  launchAtStartup: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  enabled: true,
+  intensity: "normal",
+  wind: 0,
+  snowOnWindows: true,
+  snowOnTaskbar: true,
+  snowOnIcons: true,
+  snowman: true,
+  icicles: true,
+  snowballs: false,
+  launchAtStartup: false,
+};
+
+export interface Power {
+  /** Fullscreen app or lock screen: render nothing. */
+  paused: boolean;
+  /** On battery / battery saver: 30 fps. */
+  battery: boolean;
+}
+
 export interface Boot {
   layout: Layout;
   surfaces: Surfaces;
+  settings: Settings;
+  power: Power;
   debug: boolean;
   platform: string;
 }

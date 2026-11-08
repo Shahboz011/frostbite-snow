@@ -23,6 +23,11 @@ const SPILL_CLUMP = 14;
 /** Upper bound on clumps from one shed event. */
 const MAX_SHED_CLUMPS = 700;
 const BUCKET = 128;
+/** Icicle spacing and max length, px at 100% scale. */
+const ICICLE_SPACING = 46;
+const ICICLE_MAX_LEN = 17;
+/** Snow off: piles melt away in about this many seconds. */
+const MELT_SECONDS = 4;
 /**
  * Flakes nearer than this fall in front of windows and only settle on the
  * ground. Without it every window shelters everything below it.
@@ -59,6 +64,12 @@ export class Ledge {
   d1 = -1;
   private spillL = 0;
   private spillR = 0;
+  /** Ground over a bottom taskbar: icicles may hang below the edge. */
+  hang = false;
+  /** Icicles: column index and length/width factors (ground ledges only). */
+  readonly icCol: Int32Array;
+  readonly icLen: Float32Array;
+  readonly icW: Float32Array;
 
   constructor(
     readonly id: string,
@@ -90,6 +101,43 @@ export class Ledge {
       this.cap[c] = this.maxH * (lo + (1 - lo) * n);
     }
     this.ceil = this.cap.slice();
+
+    const nIc = kind === LedgeKind.Ground ? Math.floor(width / (ICICLE_SPACING * scale)) : 0;
+    this.icCol = new Int32Array(nIc);
+    this.icLen = new Float32Array(nIc);
+    this.icW = new Float32Array(nIc);
+    for (let i = 0; i < nIc; i++) {
+      const jitter = (Math.random() - 0.5) * 0.7;
+      this.icCol[i] = Math.min(this.cols - 1, Math.floor(((i + 0.5 + jitter) * ICICLE_SPACING * scale) / colW));
+      this.icLen[i] = 0.35 + 0.65 * Math.random() * Math.random();
+      this.icW[i] = 0.7 + 0.6 * Math.random();
+    }
+  }
+
+  /** How far below the edge this ledge may draw (icicles). */
+  get below(): number {
+    return this.hang ? (ICICLE_MAX_LEN + 3) * this.scale : 3 * this.scale;
+  }
+
+  /** Current length of icicle i: grows with the snow above it. */
+  icicleLength(i: number): number {
+    const c = this.icCol[i];
+    const fill = Math.min(1, this.h[c] / (this.maxH * 0.55));
+    return fill * fill * this.icLen[i] * ICICLE_MAX_LEN * this.scale;
+  }
+
+  /** Lower every column; returns true while any snow is left. */
+  melt(dt: number): boolean {
+    const d = (this.maxH / MELT_SECONDS) * dt;
+    let left = false;
+    for (let c = 0; c < this.cols; c++) {
+      const v = this.h[c];
+      if (v <= 0) continue;
+      this.h[c] = v > d ? v - d : 0;
+      left = true;
+    }
+    if (left) this.markDirty(0, this.cols - 1);
+    return left;
   }
 
   get width(): number {
@@ -241,7 +289,38 @@ export class LedgeSet {
   private bItems = new Int32Array(0);
   private nb = 0;
 
+  /** Which surfaces collect snow, and whether icicles show. */
+  opts = { windows: true, ground: true, icicles: true };
+  private surfaces: Surfaces = { windows: [], taskbars: [] };
+  private melting = false;
+
   constructor(private emit: EmitClump) {}
+
+  setOptions(o: { windows: boolean; ground: boolean; icicles: boolean }, now: number): void {
+    const iciclesChanged = o.icicles !== this.opts.icicles;
+    this.opts = { ...o };
+    this.sync(this.surfaces, now);
+    if (iciclesChanged) for (const l of this.list) if (l.kind === LedgeKind.Ground) this.pushBox(l);
+  }
+
+  /** Snow switched off: melt everything. Call each frame; cheap when done. */
+  melt(dt: number): void {
+    let any = false;
+    for (const l of this.list) if (l.melt(dt)) any = true;
+    this.melting = any;
+  }
+
+  /** Tray "shake off": window piles fall as clumps, ground snow vanishes. */
+  shakeAll(): void {
+    for (const l of this.list) {
+      this.pushBox(l);
+      if (l.kind === LedgeKind.Window) l.shed(0, 0, this.emit);
+      else {
+        l.h.fill(0);
+        l.markDirty(0, l.cols - 1);
+      }
+    }
+  }
 
   setLayout(l: Layout, s: Surfaces, now: number): void {
     this.monitors = l.monitors;
@@ -252,7 +331,7 @@ export class LedgeSet {
 
   private pushBox(l: Ledge): void {
     const pad = 4 * l.scale;
-    this.boxes.push(l.x - pad - l.colW, l.y - l.maxH - pad, l.width + 2 * pad + 2 * l.colW, l.maxH + 2 * pad);
+    this.boxes.push(l.x - pad - l.colW, l.y - l.maxH - pad, l.width + 2 * pad + 2 * l.colW, l.maxH + pad + l.below);
   }
 
   private monitorForEdge(r: Rect): MonitorInfo | undefined {
@@ -275,6 +354,7 @@ export class LedgeSet {
   sync(s: Surfaces, now: number): void {
     const dt = Math.min(0.25, Math.max(0.03, now - this.lastSync));
     this.lastSync = now;
+    this.surfaces = s;
     this.windows = s.windows;
     const next: Ledge[] = [];
     const seen = new Set<string>();
@@ -312,12 +392,22 @@ export class LedgeSet {
       }
       l.z = z;
       next.push(l);
+      return l;
     };
 
-    this.monitors.forEach((m, i) => {
-      upsert(`g${i}`, LedgeKind.Ground, m.rect.x, groundY(m, s.taskbars, this.layoutH), m.rect.w, m.scale, -1);
-    });
-    s.windows.forEach((w, z) => {
+    if (this.opts.ground) {
+      this.monitors.forEach((m, i) => {
+        const gy = groundY(m, s.taskbars, this.layoutH);
+        const l = upsert(`g${i}`, LedgeKind.Ground, m.rect.x, gy, m.rect.w, m.scale, -1);
+        const hang = this.opts.icicles && gy < m.rect.y + m.rect.h - 12 * m.scale;
+        if (hang !== l.hang) {
+          if (l.hang) this.pushBox(l);
+          l.hang = hang;
+          this.pushBox(l);
+        }
+      });
+    }
+    if (this.opts.windows) s.windows.forEach((w, z) => {
       const m = this.monitorForEdge(w.rect);
       if (!m || w.rect.y < m.rect.y + MIN_TOP_GAP * m.scale) return;
       upsert(`w${w.id}`, LedgeKind.Window, w.rect.x, w.rect.y, w.rect.w, m.scale, z);
@@ -429,15 +519,8 @@ export class LedgeSet {
   }
 
   get busy(): boolean {
+    if (this.melting) return true;
     for (const l of this.list) if (l.active || l.d1 >= l.d0) return true;
     return this.boxes.length > 0;
-  }
-
-  /** Drop all accumulated snow (e.g. snow switched off). */
-  clearAll(): void {
-    for (const l of this.list) {
-      l.h.fill(0);
-      this.pushBox(l);
-    }
   }
 }

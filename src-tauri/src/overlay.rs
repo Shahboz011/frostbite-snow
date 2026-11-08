@@ -82,3 +82,21 @@ pub fn set_click_through<R: Runtime>(app: &AppHandle<R>, through: bool) {
         }
     });
 }
+
+/// Hide/show without activating (pause for fullscreen apps and the lock screen).
+pub fn set_visible<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    let state = app.state::<AppState>();
+    let handle = *state.overlay.lock().unwrap();
+    let done = handle.is_some_and(|h| state.platform.set_overlay_visible(h, visible));
+    if !done {
+        if let Some(win) = window(app) {
+            let _ = if visible { win.show() } else { win.hide() };
+        }
+    }
+    if visible {
+        if let Some(h) = handle {
+            let _ = state.platform.prepare_overlay(h);
+            state.platform.raise_overlay(h);
+        }
+    }
+}
