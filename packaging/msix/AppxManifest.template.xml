@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MSIX manifest template. build-msix.ps1 fills the {{PLACEHOLDERS}}.
+  MSIX manifest template. build-msix.ps1 fills in the double-brace tokens below.
   For the Store, IDENTITY_NAME / PUBLISHER / PUBLISHER_DISPLAY_NAME must be
   copied exactly from Partner Center → your app → Product identity.
 -->
