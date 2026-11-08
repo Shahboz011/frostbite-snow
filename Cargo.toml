@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["src-tauri", "crates/frostbite-platform"]
+
+[profile.release]
+# Small, fast binary: this app lives in the background all day.
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
