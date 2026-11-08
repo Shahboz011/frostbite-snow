@@ -8,6 +8,8 @@ import type { Layout, MonitorInfo, Rect, Surfaces, WindowSurface } from "../type
 export const enum LedgeKind {
   Ground = 0,
   Window = 1,
+  /** Top of a desktop icon: like a window top, but behind every window. */
+  Icon = 2,
 }
 
 /** Windows moving faster than this (px/s at 100% scale) shake their snow off. */
@@ -16,6 +18,7 @@ const FOLLOW_MAX_SPEED = 420;
 const MIN_TOP_GAP = 6;
 const GROUND_MAX_H = 38;
 const WINDOW_MAX_H = 15;
+const ICON_MAX_H = 7;
 /** Max height difference between neighbouring columns, in column widths (~40°). */
 const REPOSE = 0.85;
 /** Spill volume (px²) collected at a window's end before a clump falls off. */
@@ -39,6 +42,13 @@ const WINDOW_CATCH_MAX_DEPTH = 0.6;
  */
 const WINDOW_CATCH_P = 0.65;
 const MIN_VISIBLE_H = 0.35;
+
+export interface LedgeOptions {
+  windows: boolean;
+  ground: boolean;
+  icons: boolean;
+  icicles: boolean;
+}
 
 /** Called to launch a falling clump of snow (vx, vy in px/s, mass in px²). */
 export type EmitClump = (x: number, y: number, vx: number, vy: number, mass: number, scale: number) => void;
@@ -85,7 +95,8 @@ export class Ledge {
     this.cols = Math.max(1, Math.ceil(width / colW));
     this.h = new Float32Array(this.cols);
     this.mask = new Uint8Array(this.cols).fill(1);
-    this.maxH = (kind === LedgeKind.Ground ? GROUND_MAX_H : WINDOW_MAX_H) * scale;
+    this.maxH =
+      (kind === LedgeKind.Ground ? GROUND_MAX_H : kind === LedgeKind.Icon ? ICON_MAX_H : WINDOW_MAX_H) * scale;
     this.cap = new Float32Array(this.cols);
     // Smooth, irregular drift profile from a few incommensurate sines, keyed on
     // screen x so neighbouring ledges don't share one pattern.
@@ -200,7 +211,7 @@ export class Ledge {
       hi = c + 1;
     }
     // Window ends: snow beyond the slope limit slides off and falls.
-    if (this.kind === LedgeKind.Window) {
+    if (this.kind !== LedgeKind.Ground) {
       if (h[0] > s) {
         this.spillL += (h[0] - s) * this.colW;
         h[0] = s;
@@ -290,13 +301,13 @@ export class LedgeSet {
   private nb = 0;
 
   /** Which surfaces collect snow, and whether icicles show. */
-  opts = { windows: true, ground: true, icicles: true };
-  private surfaces: Surfaces = { windows: [], taskbars: [] };
+  opts: LedgeOptions = { windows: true, ground: true, icons: true, icicles: true };
+  private surfaces: Surfaces = { windows: [], taskbars: [], icons: [] };
   private melting = false;
 
   constructor(private emit: EmitClump) {}
 
-  setOptions(o: { windows: boolean; ground: boolean; icicles: boolean }, now: number): void {
+  setOptions(o: LedgeOptions, now: number): void {
     const iciclesChanged = o.icicles !== this.opts.icicles;
     this.opts = { ...o };
     this.sync(this.surfaces, now);
@@ -314,7 +325,7 @@ export class LedgeSet {
   shakeAll(): void {
     for (const l of this.list) {
       this.pushBox(l);
-      if (l.kind === LedgeKind.Window) l.shed(0, 0, this.emit);
+      if (l.kind !== LedgeKind.Ground) l.shed(0, 0, this.emit);
       else {
         l.h.fill(0);
         l.markDirty(0, l.cols - 1);
@@ -378,7 +389,7 @@ export class LedgeSet {
         const dx = x - l.x;
         const dy = y - l.y;
         this.pushBox(l);
-        if (kind === LedgeKind.Window && Math.hypot(dx, dy) / dt > FOLLOW_MAX_SPEED * scale) {
+        if (kind !== LedgeKind.Ground && Math.hypot(dx, dy) / dt > FOLLOW_MAX_SPEED * scale) {
           // Snow keeps a little of the window's sideways motion; a window
           // yanked upward just leaves its snow behind to fall.
           const lim = 500 * scale;
@@ -412,6 +423,15 @@ export class LedgeSet {
       if (!m || w.rect.y < m.rect.y + MIN_TOP_GAP * m.scale) return;
       upsert(`w${w.id}`, LedgeKind.Window, w.rect.x, w.rect.y, w.rect.w, m.scale, z);
     });
+    // Desktop icons sit behind every window (z after the last window).
+    if (this.opts.icons) {
+      const iconZ = s.windows.length;
+      (s.icons ?? []).forEach((r, i) => {
+        const m = this.monitorForEdge(r);
+        if (!m || r.y < m.rect.y + MIN_TOP_GAP * m.scale) return;
+        upsert(`i${i}`, LedgeKind.Icon, r.x, r.y, r.w, m.scale, iconZ);
+      });
+    }
 
     // Closed, minimized, maximized or gone off-screen: its snow falls.
     for (const l of this.list) {
@@ -421,7 +441,7 @@ export class LedgeSet {
       this.byId.delete(l.id);
     }
     this.list = next;
-    for (const l of next) if (l.kind === LedgeKind.Window) this.computeMask(l);
+    for (const l of next) if (l.kind !== LedgeKind.Ground) this.computeMask(l);
     this.buildBuckets();
   }
 
@@ -491,7 +511,7 @@ export class LedgeSet {
     const end = this.bStart[b + 1];
     for (let k = this.bStart[b]; k < end; k++) {
       const l = this.list[this.bItems[k]];
-      if (l.kind === LedgeKind.Window) {
+      if (l.kind !== LedgeKind.Ground) {
         if (passesWindows) continue;
         const r = seed * 7.31 + l.z * 0.618;
         if (r - Math.floor(r) > WINDOW_CATCH_P) continue;

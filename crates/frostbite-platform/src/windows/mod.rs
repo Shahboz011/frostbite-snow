@@ -4,7 +4,9 @@
 //! coordinate here is in physical pixels.
 
 use std::ffi::c_void;
+use std::sync::Mutex;
 
+mod icons;
 mod surfaces;
 mod system;
 
@@ -27,11 +29,13 @@ use crate::{
     MonitorInfo, NativeHandle, Platform, PlatformError, Point, Rect, Result, Surfaces, SystemState,
 };
 
-pub struct WindowsPlatform;
+pub struct WindowsPlatform {
+    icons: Mutex<Option<icons::IconReader>>,
+}
 
 impl WindowsPlatform {
     pub fn new() -> Self {
-        Self
+        Self { icons: Mutex::new(None) }
     }
 }
 
@@ -154,5 +158,20 @@ impl Platform for WindowsPlatform {
 
     fn set_autostart(&self, enable: bool) -> Result<()> {
         system::set_autostart(enable)
+    }
+
+    fn desktop_icons(&self) -> Option<Vec<Rect>> {
+        let mut guard = self.icons.lock().ok()?;
+        if guard.as_ref().is_some_and(|r| !r.alive()) {
+            *guard = None; // explorer restarted
+        }
+        if guard.is_none() {
+            *guard = icons::IconReader::open();
+        }
+        let result = guard.as_ref()?.icons();
+        if result.is_none() {
+            *guard = None; // reconnect next time
+        }
+        result
     }
 }

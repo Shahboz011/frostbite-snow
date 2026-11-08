@@ -2,7 +2,9 @@
 //! toolkit fallbacks) on a Mac or Linux dev machine. A real macOS backend will
 //! replace this later.
 
-use crate::{MonitorInfo, NativeHandle, Platform, PlatformError, Point, Result, Surfaces, SystemState};
+use crate::{
+    MonitorInfo, NativeHandle, Platform, PlatformError, Point, Rect, Result, Surfaces, SystemState,
+};
 
 pub struct StubPlatform;
 
@@ -34,5 +36,8 @@ impl Platform for StubPlatform {
     }
     fn set_autostart(&self, _enable: bool) -> Result<()> {
         Err(PlatformError("autostart not supported on this platform yet".into()))
+    }
+    fn desktop_icons(&self) -> Option<Vec<Rect>> {
+        None
     }
 }

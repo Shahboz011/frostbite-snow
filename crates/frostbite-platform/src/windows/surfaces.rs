@@ -148,5 +148,6 @@ pub fn taskbars() -> Vec<Rect> {
 }
 
 pub fn surfaces(own: Option<NativeHandle>) -> Surfaces {
-    Surfaces { windows: windows(own), taskbars: taskbars() }
+    // Icons are read separately (slower cadence) by the app; see desktop_icons().
+    Surfaces { windows: windows(own), taskbars: taskbars(), icons: Vec::new() }
 }

@@ -61,6 +61,8 @@ pub struct Surfaces {
     /// Top of the z-order first.
     pub windows: Vec<WindowSurface>,
     pub taskbars: Vec<Rect>,
+    /// Desktop icon image rects (behind every window).
+    pub icons: Vec<Rect>,
 }
 
 impl Surfaces {
@@ -72,6 +74,7 @@ impl Surfaces {
                 .map(|w| WindowSurface { id: w.id, rect: w.rect.offset(dx, dy) })
                 .collect(),
             taskbars: self.taskbars.iter().map(|r| r.offset(dx, dy)).collect(),
+            icons: self.icons.iter().map(|r| r.offset(dx, dy)).collect(),
         }
     }
 }
@@ -170,6 +173,11 @@ pub trait Platform: Send + Sync {
     /// Launch-at-login state. `None` = not supported on this backend.
     fn autostart_enabled(&self) -> Option<bool>;
     fn set_autostart(&self, enable: bool) -> Result<()>;
+
+    /// Desktop icon rects. `None` = couldn't read them (unsupported, explorer
+    /// not running, access denied); the app then skips icon snow.
+    /// Called ~1 Hz and only while icon snow is enabled.
+    fn desktop_icons(&self) -> Option<Vec<Rect>>;
 }
 
 /// The backend for the current OS.

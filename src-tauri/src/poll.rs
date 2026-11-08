@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use frostbite_platform::Point;
+use frostbite_platform::{Point, Rect};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -16,6 +16,8 @@ const SURFACE_EVERY: u32 = 3;
 /// ...and every tick for this many ticks (~1 s) after something changed, so
 /// snow riding a slowly moving window doesn't stutter.
 const HOT_TICKS: u32 = 30;
+/// Desktop icons every ~1 s (they rarely move; reading them is cross-process).
+const ICON_EVERY: u32 = 30;
 /// Fullscreen / lock / battery every ~0.5 s.
 const SYSTEM_EVERY: u32 = 15;
 /// Housekeeping every ~2 s.
@@ -39,6 +41,8 @@ fn run<R: Runtime>(app: AppHandle<R>) {
     let mut click_through = true;
     let mut tick: u32 = 0;
     let mut hot: u32 = 0;
+    let mut icons: Vec<Rect> = Vec::new();
+    let mut icons_failed = false;
 
     loop {
         std::thread::sleep(TICK);
@@ -90,11 +94,40 @@ fn run<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
+        // --- desktop icons ----------------------------------------------------
+        let mut icons_changed = false;
+        if tick % ICON_EVERY == 0 || (hot > 0 && tick % SURFACE_EVERY == 0) {
+            let want = state.settings.lock().unwrap().snow_on_icons;
+            let next = if want {
+                match state.platform.desktop_icons() {
+                    Some(v) => {
+                        icons_failed = false;
+                        v
+                    }
+                    None => {
+                        if !icons_failed {
+                            eprintln!("frostbite: desktop icons unavailable; skipping icon snow");
+                            icons_failed = true;
+                        }
+                        Vec::new()
+                    }
+                }
+            } else {
+                Vec::new()
+            };
+            if next != icons {
+                icons = next;
+                icons_changed = true;
+            }
+        }
+
         // --- surfaces -------------------------------------------------------
-        if hot > 0 || tick % SURFACE_EVERY == 0 {
+        if icons_changed || hot > 0 || tick % SURFACE_EVERY == 0 {
             hot = hot.saturating_sub(1);
             let own = *state.overlay.lock().unwrap();
-            let s = state.platform.surfaces(own).offset(-ox, -oy);
+            let mut s = state.platform.surfaces(own);
+            s.icons.clone_from(&icons);
+            let s = s.offset(-ox, -oy);
             let changed = {
                 let mut cur = state.surfaces.lock().unwrap();
                 if *cur != s {

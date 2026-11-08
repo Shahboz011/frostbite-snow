@@ -31,6 +31,8 @@ export interface Surfaces {
   /** Top of the z-order first. */
   windows: WindowSurface[];
   taskbars: Rect[];
+  /** Desktop icon image rects (behind every window). */
+  icons: Rect[];
 }
 
 /** Mirrors src-tauri/src/settings.rs. */

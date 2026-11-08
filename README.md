@@ -14,7 +14,7 @@ click-through, always-on-top overlay that spans every monitor.
 | M2 | Window + taskbar detection, piles, snow falling off moving windows | ✅ code complete, needs a Windows run-through |
 | M3 | Tray menu, settings, autostart, fullscreen pause, battery mode | ✅ code complete, needs a Windows run-through |
 | M4 | Snowman building / knocking over / snowballs | ✅ code complete, needs a Windows run-through |
-| M5 | Desktop icon detection | ⏳ |
+| M5 | Desktop icon detection | ✅ code complete, needs a Windows run-through |
 | M6 | MSIX (Store) + NSIS packaging | ⏳ |
 
 ## Layout
@@ -25,6 +25,7 @@ crates/frostbite-platform/   OS layer behind the `Platform` trait
   src/windows/mod.rs         Win32 backend: monitors, cursor, overlay styles
   src/windows/surfaces.rs    EnumWindows + DWM frame bounds, taskbars
   src/windows/system.rs      fullscreen, lock screen, power, autostart, show/hide
+  src/windows/icons.rs       desktop icon rects from explorer's list view
   src/stub.rs                non-Windows dev stub (macOS backend goes here later)
 src-tauri/                   Tauri app
   src/overlay.rs             overlay window setup, bounds, click-through toggling
@@ -107,7 +108,6 @@ their monitor's DPI scale at spawn, so they look the same size on a 100% and a
   Icicles, Snowball fights, Launch at startup, Shake off all snow, Quit.
   - Tray menus can't hold a real slider, so **Wind** is a 7-step submenu
     (← Strong … Calm … Strong →).
-  - Snow on desktop icons is stored now and starts working in M5.
 - **Settings file.** `%APPDATA%\app.frostbite.desktop\settings.json`, written
   atomically (temp file + rename). Missing or unknown fields fall back to
   defaults, so the file stays compatible as settings are added.
@@ -156,6 +156,34 @@ their monitor's DPI scale at spawn, so they look the same size on a 100% and a
 - **Limits.** At most 9 balls at once. Turning off Snowman, snow, or snow on
   the taskbar bursts any snowmen.
 
+### Desktop icons (M5)
+
+- **Finding the icons.** The desktop is explorer's `SysListView32` under
+  `Progman\SHELLDLL_DefView`, or under a `WorkerW` after wallpaper changes;
+  both are checked. List-view messages that return data need a buffer inside
+  explorer, so one 16-byte block is allocated there with `VirtualAllocEx` and
+  results are read back with `ReadProcessMemory`.
+- **Minimal writes.** Each refresh makes **one** cross-process write: the
+  `LVIR_ICON` selector for item 0's icon rect. All icons on the desktop share
+  one size and offset, so every other icon only needs `LVM_GETITEMPOSITION`,
+  which only reads.
+- **Cost.** Refreshed about once a second (every 100 ms while things are
+  moving), only while *Snow on desktop icons* is on, with a 50 ms timeout per
+  message. At most 400 icons.
+- **Failure handling.** If explorer restarts, the reader reconnects. If
+  anything fails (access denied, no list view, hidden icons), icons are simply
+  skipped and everything else keeps working.
+- **Behaviour.** Icon tops collect a small cap (up to 7 px × DPI). Icons sit
+  behind every window, so a window covering an icon hides and stops its snow.
+  Dragging an icon shakes its snow off.
+- ⚠️ **Antivirus and Store risk.** `VirtualAllocEx` + `WriteProcessMemory`
+  into `explorer.exe` looks like code injection to heuristics. Keeping it to a
+  single 16-byte write and doing nothing while icon snow is off reduces this
+  but can't rule it out. If Defender or Store certification flags it, the
+  fallback is the documented shell API (`IShellWindows` → `IFolderView2`):
+  item positions plus icon size, with no writes into another process. It's
+  slightly less exact.
+
 ## Prerequisites (Windows)
 
 - Windows 10 1809+ or Windows 11, x64
@@ -186,9 +214,10 @@ npm run dev
 
 Open <http://localhost:1420/?intensity=blizzard&wind=0.4&monitors=2>. The page
 fakes a monitor layout (`monitors=2` gives two monitors of different heights
-and DPI), a taskbar, and `windows=N` (default 3) fake windows. Keys stand in
+and DPI), a taskbar, `windows=N` (default 3) fake windows and `icons=N`
+(default 6) draggable fake desktop icons. Keys stand in
 for the tray: `S` snow, `1`/`2`/`3` intensity, `←`/`→` wind, `W` windows, `T`
-taskbar, `I` icicles, `N` snowman, `F` snowball fights, `X` shake off, `P`
+taskbar, `O` desktop icons, `I` icicles, `N` snowman, `F` snowball fights, `X` shake off, `P`
 pause (fullscreen), `B` battery. Snowman building works with the real mouse. Drag a title
 bar slowly to carry the snow along, flick it to shake the snow off, click to
 raise, use × to close, and double-click the background to add a window. The

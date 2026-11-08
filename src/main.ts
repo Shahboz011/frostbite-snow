@@ -25,7 +25,7 @@ let hitKey = "";
 const PILE_REDRAW_INTERVAL = 0.05;
 
 let layout: Layout;
-let surfaces: Surfaces = { windows: [], taskbars: [] };
+let surfaces: Surfaces = { windows: [], taskbars: [], icons: [] };
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let power: Power = { paused: false, battery: false };
 let debug = false;
@@ -76,7 +76,10 @@ function applySettings(s: Settings): void {
   sim.settings.enabled = s.enabled;
   sim.settings.intensity = s.intensity;
   sim.settings.wind = s.wind;
-  sim.ledges.setOptions({ windows: s.snowOnWindows, ground: s.snowOnTaskbar, icicles: s.icicles }, now());
+  sim.ledges.setOptions(
+    { windows: s.snowOnWindows, ground: s.snowOnTaskbar, icons: s.snowOnIcons, icicles: s.icicles },
+    now(),
+  );
   yard.enabled = s.snowman && s.enabled && s.snowOnTaskbar;
   yard.throwing = s.snowballs;
   updateFpsCap();
@@ -195,7 +198,7 @@ const loop = new FrameLoop((dt) => {
         `snow ${settings.enabled ? "on" : "off"}  flakes ${sim.pool.count}  ${settings.intensity}  wind ${sim.windNow.toFixed(0)} px/s\n` +
         `ledges ${sim.ledges.list.length}  pile redraws ${(pileDraws / fpsTime).toFixed(0)}/s\n` +
         `monitors ${layout.monitors.length}  ${layout.width}×${layout.height}` +
-        (bridge.native ? "" : "\nkeys: S 1 2 3 ←→ W T I N F X P B");
+        (bridge.native ? "" : "\nkeys: S 1 2 3 ←→ W T O I N F X P B");
       fpsFrames = 0;
       fpsTime = 0;
       pileDraws = 0;

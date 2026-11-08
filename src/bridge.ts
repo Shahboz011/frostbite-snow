@@ -58,8 +58,9 @@ class TauriBridge implements Bridge {
  * - `?monitors=2`: two fake monitors of different heights and DPI.
  * - `?windows=N` (default 3): draggable fake windows (drag the title bar,
  *   click to raise, × to close, double-click the desktop to add one).
+ * - `?icons=N` (default 6): fake desktop icons (drag to move), behind windows.
  * - Keys stand in for the tray menu: S snow, 1/2/3 intensity, ←/→ wind,
- *   W windows, T taskbar, I icicles, N snowman, F snowball fights, X shake off,
+ *   W windows, T taskbar, O desktop icons, I icicles, N snowman, F snowball fights, X shake off,
  *   P pause (fullscreen), B battery.
  */
 class BrowserBridge implements Bridge {
@@ -67,6 +68,7 @@ class BrowserBridge implements Bridge {
   private layoutCbs: ((l: Layout) => void)[] = [];
   private surfaceCbs: ((s: Surfaces) => void)[] = [];
   private desk = document.createElement("div");
+  private iconLayer = document.createElement("div");
   private taskbar = document.createElement("div");
   private nextId = 1;
   private emitQueued = false;
@@ -80,6 +82,7 @@ class BrowserBridge implements Bridge {
     document.body.classList.add("preview");
     this.desk.id = "fake-desktop";
     document.body.prepend(this.desk);
+    document.body.prepend(this.iconLayer); // first = lowest: icons sit behind windows
     this.taskbar.className = "fake-taskbar";
     document.body.prepend(this.taskbar);
     window.addEventListener("resize", () => {
@@ -106,6 +109,9 @@ class BrowserBridge implements Bridge {
       [0.3, 0.62, 0.3, 0.2],
       [0.6, 0.15, 0.3, 0.2],
     ];
+    const nIcons = Number(q.get("icons") ?? "6");
+    const labels = ["Notes", "Photos", "Budget", "Recycle", "Music", "Games", "Docs", "Trip"];
+    for (let i = 0; i < nIcons; i++) this.addIcon(16 + 90 * Math.floor(i / 5), 16 + 96 * (i % 5), labels[i % labels.length]);
     for (let i = 0; i < n; i++) {
       const p = presets[i % presets.length];
       this.addWindow(W * p[0], H * p[1], W * p[2], H * p[3]);
@@ -122,6 +128,7 @@ class BrowserBridge implements Bridge {
       case "arrowright": s.wind = Math.min(1, Math.round(s.wind * 3 + 1) / 3); break;
       case "w": s.snowOnWindows = !s.snowOnWindows; break;
       case "t": s.snowOnTaskbar = !s.snowOnTaskbar; break;
+      case "o": s.snowOnIcons = !s.snowOnIcons; break;
       case "i": s.icicles = !s.icicles; break;
       case "n": s.snowman = !s.snowman; break;
       case "f": s.snowballs = !s.snowballs; break;
@@ -143,6 +150,34 @@ class BrowserBridge implements Bridge {
 
   private dpr() {
     return window.devicePixelRatio || 1;
+  }
+
+  private addIcon(x: number, y: number, label: string): void {
+    const el = document.createElement("div");
+    el.className = "fake-icon";
+    Object.assign(el.style, { left: `${x}px`, top: `${y}px` });
+    const img = document.createElement("div");
+    img.className = "fake-icon-img";
+    const text = document.createElement("div");
+    text.textContent = label;
+    el.append(img, text);
+    el.addEventListener("pointerdown", (e) => {
+      const sx = e.clientX - el.offsetLeft;
+      const sy = e.clientY - el.offsetTop;
+      el.setPointerCapture(e.pointerId);
+      const move = (ev: PointerEvent) => {
+        el.style.left = `${ev.clientX - sx}px`;
+        el.style.top = `${ev.clientY - sy}px`;
+        this.queueSurfaces();
+      };
+      const up = () => {
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+    });
+    this.iconLayer.appendChild(el);
   }
 
   private addWindow(x: number, y: number, w = 300, h = 200): void {
@@ -210,6 +245,10 @@ class BrowserBridge implements Bridge {
         };
       }),
       taskbars: [{ x: Math.round(tb.left * d), y: Math.round(tb.top * d), w: Math.round(tb.width * d), h: Math.round(tb.height * d) }],
+      icons: Array.from(this.iconLayer.querySelectorAll<HTMLDivElement>(".fake-icon-img")).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.left * d), y: Math.round(r.top * d), w: Math.round(r.width * d), h: Math.round(r.height * d) };
+      }),
     };
   }
 
