@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Needed to publish the build as a GitHub Release (downloadable without sign-in).
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -55,3 +59,30 @@ jobs:
             target/release/bundle/msix/*.msix
             target/release/bundle/msix-test-cert.cer
           if-no-files-found: error
+
+      # Releases (unlike Actions artifacts) can be downloaded without a GitHub
+      # account: https://github.com/<owner>/<repo>/releases/latest
+      - name: Publish test build as a release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test-build-${{ github.run_number }}
+          name: Test build ${{ github.run_number }}
+          make_latest: true
+          body: |
+            Automatic test build from commit ${{ github.sha }}.
+
+            **Install:** download `Frostbite_..._x64-setup.exe` below and run it.
+            It isn't code-signed yet, so Windows SmartScreen will warn:
+            click **More info → Run anyway**.
+
+            Settings and Quit are on the snowflake tray icon (bottom-right,
+            maybe under the ^ arrow).
+
+            The `.msix` + `.cer` are for testing the Microsoft Store package
+            (needs an admin step to trust the test certificate; see
+            docs/PUBLISHING.md).
+          files: |
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msix/*.msix
+            target/release/bundle/msix-test-cert.cer
+          fail_on_unmatched_files: true

@@ -6,6 +6,25 @@ taskbar and desktop icons, and lets you roll a snowman.
 Tauri 2 (Rust) + TypeScript, rendered with WebGL2 on a transparent,
 click-through, always-on-top overlay that spans every monitor.
 
+## Try it (Windows 10/11)
+
+1. Open **[Releases → latest](https://github.com/Shahboz011/frostbite-snow/releases/latest)**.
+   No GitHub account needed.
+2. Download `Frostbite_…_x64-setup.exe` and run it. It installs for your
+   user only, with no admin prompt.
+3. The installer isn't code-signed yet, so SmartScreen shows "Windows
+   protected your PC". Click **More info → Run anyway**.
+4. Snow starts falling. Right-click the snowflake in the tray (bottom-right,
+   possibly under the **^** arrow) for settings or **Quit**.
+
+Things to try:
+- Drag a window slowly, then flick it.
+- Rest the mouse on the snow above the taskbar, then drag to roll a
+  snowball. Stack three to make a snowman, and click him to knock him over.
+- Switch to *Blizzard* in the tray menu.
+
+Uninstall from Settings → Apps.
+
 ## Status
 
 | Milestone | What | State |
