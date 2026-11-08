@@ -1,4 +1,5 @@
 import type { CursorPos, Intensity, Layout, MonitorInfo } from "../types";
+import { LedgeSet } from "./ledges";
 import { FlakePool } from "./pool";
 
 /** Target on-screen flakes per megapixel. */
@@ -13,6 +14,8 @@ export const MAX_FLAKES = 16000;
 
 const REPEL_RADIUS = 110; // px at scale 1
 const REPEL_FORCE = 900; // px/s² at the cursor centre
+/** Fraction of a flake's disc area that ends up as pile volume. */
+const ACCUM = 0.15;
 
 export interface SimSettings {
   enabled: boolean;
@@ -23,10 +26,12 @@ export interface SimSettings {
 
 export class SnowSim {
   readonly pool = new FlakePool(MAX_FLAKES);
+  readonly ledges = new LedgeSet((x, y, vx, vy, mass, scale) => this.emitClump(x, y, vx, vy, mass, scale));
   settings: SimSettings = { enabled: true, intensity: "normal", wind: 0.15 };
 
   private monitors: MonitorInfo[] = [];
   private width = 0;
+  private height = 0;
   private spawnAcc: Float64Array = new Float64Array(16);
   private cursorX = -1e6;
   private cursorY = -1e6;
@@ -38,6 +43,7 @@ export class SnowSim {
   setLayout(l: Layout): void {
     this.monitors = l.monitors;
     this.width = l.width;
+    this.height = l.height;
     if (this.spawnAcc.length < l.monitors.length) this.spawnAcc = new Float64Array(l.monitors.length);
     // Kill flakes that no longer belong to any screen.
     const p = this.pool;
@@ -55,7 +61,7 @@ export class SnowSim {
 
   /** True when nothing would change if we skipped frames. */
   get idle(): boolean {
-    return !this.settings.enabled && this.pool.count === 0;
+    return !this.settings.enabled && this.pool.count === 0 && !this.ledges.busy;
   }
 
   private monitorAt(x: number, y: number): MonitorInfo | undefined {
@@ -92,6 +98,7 @@ export class SnowSim {
     const relaxY = Math.min(1, dt * 2.0);
     const xMin = -60;
     const xMax = this.width + 60;
+    const ledges = this.ledges;
 
     for (let i = p.count - 1; i >= 0; i--) {
       const d = p.depth[i];
@@ -115,12 +122,44 @@ export class SnowSim {
       }
 
       const sway = Math.sin(t * p.swayF[i] + p.phase[i]) * p.swayA[i] * k;
+      const prevY = p.y[i];
       p.x[i] += (p.vx[i] + sway) * dt;
       p.y[i] += p.vy[i] * dt;
       p.rot[i] += p.rotV[i] * dt;
 
-      if (p.y[i] > p.floor[i] || p.x[i] < xMin || p.x[i] > xMax) p.kill(i);
+      if (
+        p.y[i] > p.floor[i] ||
+        p.x[i] < xMin ||
+        p.x[i] > xMax ||
+        ledges.collide(p.x[i], prevY, p.y[i], p.mass[i], p.shape[i] === 1 ? 0 : d, p.phase[i])
+      ) {
+        p.kill(i);
+      }
     }
+    ledges.step();
+  }
+
+  /** A clump of pile snow knocked loose (window moved/closed, end spill). */
+  private emitClump(x: number, y: number, vx: number, vy: number, mass: number, k: number): void {
+    const p = this.pool;
+    const i = p.alloc();
+    if (i < 0) return;
+    p.x[i] = x;
+    p.y[i] = y;
+    p.vx[i] = vx;
+    p.vy[i] = vy;
+    p.depth[i] = 1;
+    p.k[i] = k;
+    p.size[i] = Math.min(12 * k, Math.max(2.5 * k, Math.sqrt(mass) * 1.3));
+    p.phase[i] = Math.random() * Math.PI * 2;
+    p.swayF[i] = 1;
+    p.swayA[i] = 2;
+    p.alpha[i] = 0.97;
+    p.rot[i] = 0;
+    p.rotV[i] = 0;
+    p.floor[i] = this.height + 40;
+    p.mass[i] = mass;
+    p.shape[i] = 1;
   }
 
   private spawn(dt: number, wind: number): void {
@@ -176,6 +215,8 @@ export class SnowSim {
     p.alpha[i] = 0.45 + 0.55 * d;
     p.rot[i] = Math.random() * Math.PI;
     p.rotV[i] = (Math.random() - 0.5) * 1.6;
-    p.floor[i] = m.rect.y + m.rect.h;
+    p.floor[i] = m.rect.y + m.rect.h + 4;
+    p.mass[i] = p.size[i] * p.size[i] * 0.785 * ACCUM;
+    p.shape[i] = 0;
   }
 }

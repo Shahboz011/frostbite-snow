@@ -2,7 +2,7 @@
 //! toolkit fallbacks) on a Mac or Linux dev machine. A real macOS backend will
 //! replace this later.
 
-use crate::{MonitorInfo, NativeHandle, Platform, Point, Result};
+use crate::{MonitorInfo, NativeHandle, Platform, Point, Result, Surfaces};
 
 pub struct StubPlatform;
 
@@ -20,4 +20,7 @@ impl Platform for StubPlatform {
         Ok(())
     }
     fn raise_overlay(&self, _window: NativeHandle) {}
+    fn surfaces(&self, _own: Option<NativeHandle>) -> Surfaces {
+        Surfaces::default()
+    }
 }

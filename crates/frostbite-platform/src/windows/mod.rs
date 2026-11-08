@@ -5,6 +5,8 @@
 
 use std::ffi::c_void;
 
+mod surfaces;
+
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Dwm::{
@@ -20,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOSIZE, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
-use crate::{MonitorInfo, NativeHandle, Platform, PlatformError, Point, Rect, Result};
+use crate::{MonitorInfo, NativeHandle, Platform, PlatformError, Point, Rect, Result, Surfaces};
 
 pub struct WindowsPlatform;
 
@@ -128,5 +130,9 @@ impl Platform for WindowsPlatform {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
             );
         }
+    }
+
+    fn surfaces(&self, own: Option<NativeHandle>) -> Surfaces {
+        surfaces::surfaces(own)
     }
 }

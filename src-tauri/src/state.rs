@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use frostbite_platform::{NativeHandle, Platform, Rect};
+use frostbite_platform::{NativeHandle, Platform, Rect, Surfaces};
 
 use crate::layout::Layout;
 
@@ -17,6 +17,8 @@ pub struct AppState {
     pub platform: Box<dyn Platform>,
     pub layout: Mutex<Layout>,
     pub hit: Mutex<HitState>,
+    /// Latest surfaces, overlay-relative.
+    pub surfaces: Mutex<Surfaces>,
     pub overlay: Mutex<Option<NativeHandle>>,
     pub debug: bool,
 }
@@ -27,6 +29,7 @@ impl AppState {
             platform: frostbite_platform::current(),
             layout: Mutex::new(Layout::default()),
             hit: Mutex::new(HitState::default()),
+            surfaces: Mutex::new(Surfaces::default()),
             overlay: Mutex::new(None),
             debug: std::env::var_os("FROSTBITE_DEBUG").is_some() || cfg!(debug_assertions),
         }

@@ -46,6 +46,36 @@ impl Rect {
     }
 }
 
+/// A visible top-level window that snow can land on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct WindowSurface {
+    /// Stable for the window's lifetime (the HWND on Windows).
+    pub id: u64,
+    /// Visible frame bounds (no invisible resize borders or drop shadow).
+    pub rect: Rect,
+}
+
+/// Everything snow interacts with, in virtual-screen physical px.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct Surfaces {
+    /// Top of the z-order first.
+    pub windows: Vec<WindowSurface>,
+    pub taskbars: Vec<Rect>,
+}
+
+impl Surfaces {
+    pub fn offset(&self, dx: i32, dy: i32) -> Surfaces {
+        Surfaces {
+            windows: self
+                .windows
+                .iter()
+                .map(|w| WindowSurface { id: w.id, rect: w.rect.offset(dx, dy) })
+                .collect(),
+            taskbars: self.taskbars.iter().map(|r| r.offset(dx, dy)).collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct Point {
     pub x: i32,
@@ -112,6 +142,11 @@ pub trait Platform: Send + Sync {
     /// Re-assert topmost z-order without activating. Called periodically so
     /// the overlay stays above the taskbar after the user clicks it.
     fn raise_overlay(&self, window: NativeHandle);
+
+    /// Visible app windows (z-ordered, top first) and taskbar rects.
+    /// Skips cloaked, minimized, tool and click-through windows, shell
+    /// windows, and `own`. Called ~10 Hz, so it must stay cheap.
+    fn surfaces(&self, own: Option<NativeHandle>) -> Surfaces;
 }
 
 /// The backend for the current OS.

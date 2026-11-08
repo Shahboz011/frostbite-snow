@@ -22,8 +22,12 @@ export class FlakePool {
   readonly alpha: Float32Array;
   readonly rot: Float32Array;
   readonly rotV: Float32Array;
-  /** y at which the flake dies (M1: bottom of its monitor). */
+  /** Safety net: y at which the flake dies if no surface caught it. */
   readonly floor: Float32Array;
+  /** Snow volume (px²) added to a pile when this flake lands. */
+  readonly mass: Float32Array;
+  /** 0 = flake, 1 = clump of fallen pile snow (rendered without crystal arms). */
+  readonly shape: Float32Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -42,6 +46,8 @@ export class FlakePool {
     this.rot = f();
     this.rotV = f();
     this.floor = f();
+    this.mass = f();
+    this.shape = f();
   }
 
   /** Returns the new index, or -1 when full. Caller fills every field. */
@@ -66,6 +72,8 @@ export class FlakePool {
     this.rot[i] = this.rot[last];
     this.rotV[i] = this.rotV[last];
     this.floor[i] = this.floor[last];
+    this.mass[i] = this.mass[last];
+    this.shape[i] = this.shape[last];
   }
 
   clear(): void {

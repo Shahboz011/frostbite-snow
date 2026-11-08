@@ -15,12 +15,15 @@
         user-select: none;
         -webkit-user-select: none;
       }
+      #piles,
       #snow {
         position: fixed;
         inset: 0;
         width: 100vw;
         height: 100vh;
         display: block;
+        pointer-events: none;
+        z-index: 10;
       }
       #debug {
         position: fixed;
@@ -34,11 +37,40 @@
         pointer-events: none;
         white-space: pre;
         display: none;
+        z-index: 20;
       }
       /* Browser dev preview only: something to see white snow against. */
       body.preview {
         background:
           linear-gradient(180deg, #24324a 0%, #3b4f6e 55%, #6b7f99 100%);
+      }
+      /* Browser preview fakes. */
+      .fake-win {
+        position: fixed;
+        background: #fafbfc;
+        border: 1px solid #8a94a3;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+        font: 13px system-ui, sans-serif;
+        color: #333;
+      }
+      .fake-title {
+        height: 30px;
+        line-height: 30px;
+        padding: 0 8px;
+        background: #e8ebef;
+        cursor: grab;
+        display: flex;
+        justify-content: space-between;
+      }
+      .fake-title button {
+        border: 0;
+        background: none;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .fake-taskbar {
+        position: fixed;
+        background: rgba(20, 24, 32, 0.92);
       }
       .mon-outline {
         position: fixed;
@@ -49,6 +81,7 @@
     </style>
   </head>
   <body>
+    <canvas id="piles"></canvas>
     <canvas id="snow"></canvas>
     <div id="debug"></div>
     <script type="module" src="/src/main.ts"></script>

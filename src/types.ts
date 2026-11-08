@@ -21,8 +21,21 @@ export interface Layout {
   monitors: MonitorInfo[];
 }
 
+/** A visible top-level window. `id` is stable for the window's lifetime (HWND). */
+export interface WindowSurface {
+  id: number;
+  rect: Rect;
+}
+
+export interface Surfaces {
+  /** Top of the z-order first. */
+  windows: WindowSurface[];
+  taskbars: Rect[];
+}
+
 export interface Boot {
   layout: Layout;
+  surfaces: Surfaces;
   debug: boolean;
   platform: string;
 }
