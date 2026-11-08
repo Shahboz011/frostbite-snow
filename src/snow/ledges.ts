@@ -518,6 +518,18 @@ export class LedgeSet {
     }
   }
 
+  get(id: string): Ledge | undefined {
+    return this.byId.get(id);
+  }
+
+  /** The ground ledge under screen x, if snow on the taskbar is enabled. */
+  groundAt(x: number): Ledge | undefined {
+    for (const l of this.list) {
+      if (l.kind === LedgeKind.Ground && x >= l.x && x < l.x + l.width) return l;
+    }
+    return undefined;
+  }
+
   get busy(): boolean {
     if (this.melting) return true;
     for (const l of this.list) if (l.active || l.d1 >= l.d0) return true;

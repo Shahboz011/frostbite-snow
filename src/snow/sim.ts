@@ -143,7 +143,7 @@ export class SnowSim {
   }
 
   /** A clump of pile snow knocked loose (window moved/closed, end spill). */
-  private emitClump(x: number, y: number, vx: number, vy: number, mass: number, k: number): void {
+  emitClump(x: number, y: number, vx: number, vy: number, mass: number, k: number): void {
     const p = this.pool;
     const i = p.alloc();
     if (i < 0) return;

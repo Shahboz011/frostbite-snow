@@ -13,7 +13,7 @@ click-through, always-on-top overlay that spans every monitor.
 | M1 | Transparent click-through overlay, falling snow on all monitors | ✅ code complete, needs a Windows run-through |
 | M2 | Window + taskbar detection, piles, snow falling off moving windows | ✅ code complete, needs a Windows run-through |
 | M3 | Tray menu, settings, autostart, fullscreen pause, battery mode | ✅ code complete, needs a Windows run-through |
-| M4 | Snowman building / knocking over / snowballs | ⏳ |
+| M4 | Snowman building / knocking over / snowballs | ✅ code complete, needs a Windows run-through |
 | M5 | Desktop icon detection | ⏳ |
 | M6 | MSIX (Store) + NSIS packaging | ⏳ |
 
@@ -40,6 +40,8 @@ src/                         frontend
   snow/sim.ts                gravity, gusty wind, sway, depth, cursor repulsion
   snow/ledges.ts             height maps on window tops + ground, landing, slopes, shedding
   snow/piles.ts              settled snow on a cached 2D canvas, redrawn only where it changed
+  snow/yard.ts               snowballs, stacking, snowmen, knocking over, throwing
+  snow/yardRender.ts         draws balls, snowmen and thrown snowballs (own canvas)
   snow/renderer.ts           WebGL2 point sprites for flakes and clumps (Canvas2D fallback)
 ```
 
@@ -105,8 +107,7 @@ their monitor's DPI scale at spawn, so they look the same size on a 100% and a
   Icicles, Snowball fights, Launch at startup, Shake off all snow, Quit.
   - Tray menus can't hold a real slider, so **Wind** is a 7-step submenu
     (← Strong … Calm … Strong →).
-  - Snowman, snowball fights and desktop icons are stored now and start
-    working in M4 and M5.
+  - Snow on desktop icons is stored now and starts working in M5.
 - **Settings file.** `%APPDATA%\app.frostbite.desktop\settings.json`, written
   atomically (temp file + rename). Missing or unknown fields fall back to
   defaults, so the file stays compatible as settings are added.
@@ -130,6 +131,30 @@ their monitor's DPI scale at spawn, so they look the same size on a 100% and a
   running one.
 - **Icicles.** Hang from the top edge of a bottom taskbar and grow as snow
   piles above them.
+
+### Snowman (M4)
+
+- **Rolling a ball.** Rest the cursor on a thick part of the ground pile for
+  0.3 s. A dashed ring and a grab cursor show it's ready. Then press and drag
+  sideways: a snowball forms and grows as it rolls, taking snow from the pile
+  and leaving a groove.
+  - Why the 0.3 s rest: the ground pile overlaps the bottom edge of maximized
+    apps (status bars). Without it, every click there would be swallowed. A
+    quick click still passes straight through.
+- **Carrying and stacking.** Drag a loose ball, or the top ball of a stack, to
+  carry it. Drop it onto a bigger ball to stack it. Three stacked balls become
+  a snowman: coal eyes and smile, buttons, twig arms, and a carrot nose that
+  turns toward the cursor.
+- **Knocking over.** Click a snowman or ball without dragging. It tips over
+  and bursts into clumps, which settle back into the piles.
+- **Snowball fights** (tray toggle). Every 7–16 s a finished snowman swings an
+  arm and lobs a snowball in an arc at the cursor. It splats into snow.
+- **Mouse handling.** The frontend registers hit regions with Rust: one per
+  snowman or ball, plus the armed pile. While dragging it sets `capture`, so
+  the overlay keeps the mouse even if the cursor leaves those regions.
+  Everywhere else stays click-through.
+- **Limits.** At most 9 balls at once. Turning off Snowman, snow, or snow on
+  the taskbar bursts any snowmen.
 
 ## Prerequisites (Windows)
 
@@ -163,7 +188,8 @@ Open <http://localhost:1420/?intensity=blizzard&wind=0.4&monitors=2>. The page
 fakes a monitor layout (`monitors=2` gives two monitors of different heights
 and DPI), a taskbar, and `windows=N` (default 3) fake windows. Keys stand in
 for the tray: `S` snow, `1`/`2`/`3` intensity, `←`/`→` wind, `W` windows, `T`
-taskbar, `I` icicles, `X` shake off, `P` pause (fullscreen), `B` battery. Drag a title
+taskbar, `I` icicles, `N` snowman, `F` snowball fights, `X` shake off, `P`
+pause (fullscreen), `B` battery. Snowman building works with the real mouse. Drag a title
 bar slowly to carry the snow along, flick it to shake the snow off, click to
 raise, use × to close, and double-click the background to add a window. The
 real mouse drives flake repulsion. In the console, `__frostbite` exposes the

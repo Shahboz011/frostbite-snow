@@ -59,7 +59,8 @@ class TauriBridge implements Bridge {
  * - `?windows=N` (default 3): draggable fake windows (drag the title bar,
  *   click to raise, × to close, double-click the desktop to add one).
  * - Keys stand in for the tray menu: S snow, 1/2/3 intensity, ←/→ wind,
- *   W windows, T taskbar, I icicles, X shake off, P pause (fullscreen), B battery.
+ *   W windows, T taskbar, I icicles, N snowman, F snowball fights, X shake off,
+ *   P pause (fullscreen), B battery.
  */
 class BrowserBridge implements Bridge {
   readonly native = false;
@@ -122,6 +123,8 @@ class BrowserBridge implements Bridge {
       case "w": s.snowOnWindows = !s.snowOnWindows; break;
       case "t": s.snowOnTaskbar = !s.snowOnTaskbar; break;
       case "i": s.icicles = !s.icicles; break;
+      case "n": s.snowman = !s.snowman; break;
+      case "f": s.snowballs = !s.snowballs; break;
       case "x": for (const cb of this.shakeCbs) cb(); return;
       case "p": this.setPower({ ...this.power, paused: !this.power.paused }); return;
       case "b": this.setPower({ ...this.power, battery: !this.power.battery }); return;
