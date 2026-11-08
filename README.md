@@ -15,7 +15,7 @@ click-through, always-on-top overlay that spans every monitor.
 | M3 | Tray menu, settings, autostart, fullscreen pause, battery mode | ✅ code complete, needs a Windows run-through |
 | M4 | Snowman building / knocking over / snowballs | ✅ code complete, needs a Windows run-through |
 | M5 | Desktop icon detection | ✅ code complete, needs a Windows run-through |
-| M6 | MSIX (Store) + NSIS packaging | ⏳ |
+| M6 | MSIX (Store) + NSIS packaging | ✅ scripts complete, needs a Windows build |
 
 ## Layout
 
@@ -34,6 +34,12 @@ src-tauri/                   Tauri app
   src/commands.rs            IPC: boot, set_hit_regions
   src/settings.rs            settings JSON (unit tested)
   src/tray.rs                tray icon + menu
+packaging/
+  msix/                      AppxManifest template, build-msix.ps1, test cert script, Assets/
+  nsis/hooks.nsh             uninstall hook (removes the Run-key entry)
+scripts/gen-msix-assets.mjs  renders every MSIX asset from app-icon.svg
+docs/PUBLISHING.md           manual steps: Partner Center, signing, submission
+STORE_LISTING.md             Store copy, keywords, screenshot checklist, privacy policy
 src/                         frontend
   bridge.ts                  Tauri IPC, with a browser mock for visual tuning
   loop.ts                    rAF loop: FPS cap, stops entirely when idle
@@ -224,14 +230,58 @@ raise, use × to close, and double-click the background to add a window. The
 real mouse drives flake repulsion. In the console, `__frostbite` exposes the
 simulation, renderers and loop.
 
-## Build
+## Package
 
-```bash
-npm run tauri build
+Two builds: an NSIS installer for direct download, and an MSIX for the
+Microsoft Store. The steps that need your accounts (Partner Center, the name
+reservation, signing) are in [docs/PUBLISHING.md](docs/PUBLISHING.md). The
+listing text, screenshot checklist and privacy policy are in
+[STORE_LISTING.md](STORE_LISTING.md).
+
+### NSIS (direct download)
+
+```powershell
+npm run build:nsis
 ```
 
-The NSIS installer is written to `target/release/bundle/nsis/`. MSIX packaging
-for the Microsoft Store arrives in M6.
+Output: `target\release\bundle\nsis\Frostbite_<version>_x64-setup.exe`.
+It installs per user (no admin prompt), downloads WebView2 silently if it's
+missing, and its uninstaller removes the "Launch at startup" Run-key entry
+(`packaging/nsis/hooks.nsh`).
+
+### MSIX (Microsoft Store)
+
+Needs the Windows 10/11 SDK, for `makeappx` and `makepri`.
+
+```powershell
+./packaging/msix/build-msix.ps1 -IdentityName "<from Partner Center>" -Publisher "CN=<from Partner Center>" -PublisherDisplayName "<from Partner Center>"
+```
+
+Output: `target\release\bundle\msix\Frostbite_<version>.0_x64.msix`. The
+script:
+- builds the exe with `tauri build --no-bundle`
+- stages it with `Assets\` and an `AppxManifest.xml` filled from
+  `packaging/msix/AppxManifest.template.xml`
+- indexes the scale/targetsize assets into `resources.pri`
+- packs the package
+
+Leave Store uploads unsigned. To sideload-test locally, see
+`new-test-cert.ps1` and the `-CertificatePath` option.
+
+- **Startup.** The manifest declares a `windows.startupTask` (`TaskId
+  FrostbiteStartup`, disabled by default). At runtime the app detects that
+  it's packaged (`GetCurrentPackageFullName`) and toggles that task through
+  WinRT `StartupTask` instead of writing the Run key. The Run key is
+  virtualized inside packages anyway. If the user turned startup off in
+  Windows Settings, the app can't re-enable it, and the tray check reverts.
+- **Visual assets.** 77 PNGs: all scale-100…400 variants of the
+  44/71/150/310 square, 310×150 wide, store logo and splash images, plus
+  targetsize-16…256 icons including unplated variants. All are generated from
+  `app-icon.svg`:
+
+  ```bash
+  npm run msix:assets
+  ```
 
 ## Checks
 
@@ -251,7 +301,12 @@ rustup target add x86_64-pc-windows-msvc && cargo check -p frostbite-platform --
 
 ## Icon
 
-`app-icon.svg` is a placeholder. Regenerate every size with `npm run icons`.
+`app-icon.svg` is a placeholder. After changing it, regenerate the app/NSIS
+icons and the MSIX assets:
+
+```bash
+npm run icons && npm run msix:assets
+```
 
 ## Performance notes
 

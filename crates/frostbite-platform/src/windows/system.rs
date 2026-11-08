@@ -112,16 +112,83 @@ pub fn set_visible(window: NativeHandle, visible: bool) {
     }
 }
 
-// --- autostart (unpackaged builds: HKCU Run key) -------------------------------
-// The MSIX build registers a StartupTask in its manifest instead (see M6).
+// --- autostart ------------------------------------------------------------------
+// Packaged (MSIX/Store): the `windows.startupTask` declared in AppxManifest.xml,
+// toggled through the WinRT StartupTask API. The Run key is virtualized inside
+// a package, so it wouldn't work there anyway.
+// Unpackaged (NSIS / dev): HKCU\...\Run.
+
+/// Must match `TaskId` in packaging/msix/AppxManifest.template.xml.
+const STARTUP_TASK_ID: &str = "FrostbiteStartup";
+
+/// Running from an MSIX package?
+pub fn is_packaged() -> bool {
+    use windows::Win32::Foundation::APPMODEL_ERROR_NO_PACKAGE;
+    use windows::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
+    let mut len = 0u32;
+    let r = unsafe { GetCurrentPackageFullName(&mut len, None) };
+    r != APPMODEL_ERROR_NO_PACKAGE
+}
+
+/// WinRT calls block on async operations; run them on a fresh (MTA) thread so
+/// the tray's UI (STA) thread never waits on itself.
+fn on_worker<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    std::thread::spawn(f)
+        .join()
+        .unwrap_or_else(|_| Err(PlatformError("startup task worker panicked".into())))
+}
+
+fn startup_task() -> Result<windows::ApplicationModel::StartupTask> {
+    use windows::core::HSTRING;
+    windows::ApplicationModel::StartupTask::GetAsync(&HSTRING::from(STARTUP_TASK_ID))
+        .and_then(|op| op.get())
+        .map_err(|e| PlatformError(format!("StartupTask: {e}")))
+}
+
+fn packaged_autostart_enabled() -> bool {
+    use windows::ApplicationModel::StartupTaskState as S;
+    on_worker(|| {
+        let st = startup_task()?.State().map_err(|e| PlatformError(e.to_string()))?;
+        Ok(st == S::Enabled || st == S::EnabledByPolicy)
+    })
+    .unwrap_or(false)
+}
+
+fn set_packaged_autostart(enable: bool) -> Result<()> {
+    use windows::ApplicationModel::StartupTaskState as S;
+    on_worker(move || {
+        let task = startup_task()?;
+        if !enable {
+            return task.Disable().map_err(|e| PlatformError(e.to_string()));
+        }
+        let st = task
+            .RequestEnableAsync()
+            .and_then(|op| op.get())
+            .map_err(|e| PlatformError(e.to_string()))?;
+        match st {
+            S::Enabled | S::EnabledByPolicy => Ok(()),
+            // Only the user can undo these, in Settings → Apps → Startup.
+            S::DisabledByUser => Err(PlatformError(
+                "startup was turned off in Windows Settings → Apps → Startup".into(),
+            )),
+            _ => Err(PlatformError("startup is disabled by policy".into())),
+        }
+    })
+}
 
 pub fn autostart_enabled() -> bool {
+    if is_packaged() {
+        return packaged_autostart_enabled();
+    }
     unsafe {
         RegGetValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE, RRF_RT_REG_SZ, None, None, None).is_ok()
     }
 }
 
 pub fn set_autostart(enable: bool) -> Result<()> {
+    if is_packaged() {
+        return set_packaged_autostart(enable);
+    }
     unsafe {
         let mut key = HKEY::default();
         // The Run key exists on every Windows install.

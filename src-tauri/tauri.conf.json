@@ -38,7 +38,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "category": "Entertainment",
     "shortDescription": "Snow falls on your desktop.",
     "icon": [
@@ -47,6 +49,21 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Frostbite",
+    "copyright": "© 2026 Frostbite",
+    "longDescription": "Snow falls over your Windows desktop while you work, piles up on windows, the taskbar and desktop icons, and lets you build a snowman.",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "../packaging/nsis/hooks.nsh"
+      }
+    }
   }
 }

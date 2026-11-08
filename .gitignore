@@ -4,3 +4,6 @@ target/
 src-tauri/gen/
 .DS_Store
 *.log
+# signing material
+*.pfx
+*.cer

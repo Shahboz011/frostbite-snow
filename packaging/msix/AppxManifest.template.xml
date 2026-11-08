@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest template. build-msix.ps1 fills the {{PLACEHOLDERS}}.
+  For the Store, IDENTITY_NAME / PUBLISHER / PUBLISHER_DISPLAY_NAME must be
+  copied exactly from Partner Center → your app → Product identity.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap desktop rescap">
+
+  <Identity
+    Name="{{IDENTITY_NAME}}"
+    Publisher="{{PUBLISHER}}"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>{{DISPLAY_NAME}}</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Snow falls over your desktop, piles up on your windows and taskbar, and lets you build a snowman.</Description>
+  </Properties>
+
+  <Dependencies>
+    <!-- Windows 10 1809+. WebView2 ships with Windows 11 and current Windows 10. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="{{EXE}}" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="{{DISPLAY_NAME}}"
+        Description="Snow on your desktop"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png"
+          Square71x71Logo="Assets\Square71x71Logo.png"
+          ShortName="{{DISPLAY_NAME}}" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#10223b" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!--
+          Store-safe "launch at startup": off until the user enables it from the
+          tray menu (StartupTask.RequestEnableAsync). The user can also manage it
+          in Settings → Apps → Startup. TaskId must match STARTUP_TASK_ID in
+          crates/frostbite-platform/src/windows/system.rs.
+        -->
+        <desktop:Extension Category="windows.startupTask" Executable="{{EXE}}" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="FrostbiteStartup" Enabled="false" DisplayName="{{DISPLAY_NAME}}" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Required for every packaged Win32 desktop app (restricted: justify in Partner Center). -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
