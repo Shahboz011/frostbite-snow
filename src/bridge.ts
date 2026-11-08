@@ -197,6 +197,14 @@ class BrowserBridge implements Bridge {
     });
     bar.appendChild(close);
     win.appendChild(bar);
+    // Every other window is a dark "editor" (snow shows differently on dark vs light).
+    if (Number(win.dataset.id) % 2 === 0) {
+      win.classList.add("dark");
+      const body = document.createElement("div");
+      body.className = "fake-body";
+      body.textContent = "Lapland in December\nNorthern lights\nHot chocolate, lots";
+      win.appendChild(body);
+    }
     win.addEventListener("pointerdown", () => {
       this.desk.appendChild(win); // raise to top
       this.queueSurfaces();

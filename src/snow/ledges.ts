@@ -17,8 +17,8 @@ const FOLLOW_MAX_SPEED = 420;
 /** Window tops this close to their monitor's top (maximized) don't catch snow. */
 const MIN_TOP_GAP = 6;
 const GROUND_MAX_H = 38;
-const WINDOW_MAX_H = 15;
-const ICON_MAX_H = 7;
+const WINDOW_MAX_H = 18;
+const ICON_MAX_H = 11;
 /** Max height difference between neighbouring columns, in column widths (~40°). */
 const REPOSE = 0.85;
 /** Spill volume (px²) collected at a window's end before a clump falls off. */
@@ -26,9 +26,19 @@ const SPILL_CLUMP = 14;
 /** Upper bound on clumps from one shed event. */
 const MAX_SHED_CLUMPS = 700;
 const BUCKET = 128;
-/** Icicle spacing and max length, px at 100% scale. */
+/** Icicle spacing (taskbar / window bottoms) and max length, px at 100% scale. */
 const ICICLE_SPACING = 46;
+const WINDOW_ICICLE_SPACING = 15;
 const ICICLE_MAX_LEN = 17;
+const WINDOW_ICICLE_MAX_LEN = 26;
+/** Light smoothing of window/icon caps each relaxation pass: puffy, not grainy. */
+const CAP_SMOOTH = 0.12;
+/**
+ * Window and icon tops are narrow targets, so few flakes reach them; settle
+ * each flake there as more snow so caps look substantial in a few minutes.
+ */
+const WINDOW_ACCUM = 2.5;
+const ICON_ACCUM = 3;
 /** Snow off: piles melt away in about this many seconds. */
 const MELT_SECONDS = 4;
 /**
@@ -74,12 +84,18 @@ export class Ledge {
   d1 = -1;
   private spillL = 0;
   private spillR = 0;
-  /** Ground over a bottom taskbar: icicles may hang below the edge. */
+  /** Icicles are shown (ground over a bottom taskbar, or a window with a visible bottom edge). */
   hang = false;
-  /** Icicles: column index and length/width factors (ground ledges only). */
+  /** Where icicles hang from: the edge itself (ground) or the window's bottom edge. */
+  hangY: number;
+  /** 1 where the hanging edge is visible (window bottoms can be covered or off-screen). */
+  readonly hmask: Uint8Array;
+  /** Icicles: column index and length/width factors (ground and window ledges). */
   readonly icCol: Int32Array;
   readonly icLen: Float32Array;
   readonly icW: Float32Array;
+  /** Longest icicle this ledge can grow, px. */
+  readonly icMax: number;
 
   constructor(
     readonly id: string,
@@ -92,7 +108,9 @@ export class Ledge {
   ) {
     this.x = x;
     this.y = y;
+    this.hangY = y;
     this.cols = Math.max(1, Math.ceil(width / colW));
+    this.hmask = new Uint8Array(this.cols).fill(1);
     this.h = new Float32Array(this.cols);
     this.mask = new Uint8Array(this.cols).fill(1);
     this.maxH =
@@ -100,7 +118,8 @@ export class Ledge {
     this.cap = new Float32Array(this.cols);
     // Smooth, irregular drift profile from a few incommensurate sines, keyed on
     // screen x so neighbouring ledges don't share one pattern.
-    const lo = kind === LedgeKind.Ground ? 0.55 : 0.75;
+    // Ground drifts vary a lot; window/icon caps are thick and even.
+    const lo = kind === LedgeKind.Ground ? 0.55 : 0.88;
     const ph = Math.random() * 100;
     for (let c = 0; c < this.cols; c++) {
       const u = (x + c * colW) / scale + ph;
@@ -113,28 +132,41 @@ export class Ledge {
     }
     this.ceil = this.cap.slice();
 
-    const nIc = kind === LedgeKind.Ground ? Math.floor(width / (ICICLE_SPACING * scale)) : 0;
+    const spacing =
+      kind === LedgeKind.Ground ? ICICLE_SPACING : kind === LedgeKind.Window ? WINDOW_ICICLE_SPACING : 0;
+    const nIc = spacing ? Math.floor(width / (spacing * scale)) : 0;
+    this.icMax = (kind === LedgeKind.Window ? WINDOW_ICICLE_MAX_LEN : ICICLE_MAX_LEN) * scale;
     this.icCol = new Int32Array(nIc);
     this.icLen = new Float32Array(nIc);
     this.icW = new Float32Array(nIc);
     for (let i = 0; i < nIc; i++) {
       const jitter = (Math.random() - 0.5) * 0.7;
-      this.icCol[i] = Math.min(this.cols - 1, Math.floor(((i + 0.5 + jitter) * ICICLE_SPACING * scale) / colW));
-      this.icLen[i] = 0.35 + 0.65 * Math.random() * Math.random();
-      this.icW[i] = 0.7 + 0.6 * Math.random();
+      this.icCol[i] = Math.max(0, Math.min(this.cols - 1, Math.floor(((i + 0.5 + jitter) * spacing * scale) / colW)));
+      // Windows: many thin icicles of mixed length; taskbar: fewer, chunkier.
+      const win = kind === LedgeKind.Window;
+      this.icLen[i] = win ? 0.2 + 0.8 * Math.random() * Math.random() : 0.35 + 0.65 * Math.random() * Math.random();
+      this.icW[i] = win ? 0.6 + 0.45 * Math.random() : 0.7 + 0.6 * Math.random();
     }
   }
 
-  /** How far below the edge this ledge may draw (icicles). */
+  /** How far below the top edge this ledge may draw (taskbar icicles, draped lips). */
   get below(): number {
-    return this.hang ? (ICICLE_MAX_LEN + 3) * this.scale : 3 * this.scale;
+    return this.hang && this.hangY === this.y ? this.icMax + 3 * this.scale : 5 * this.scale;
+  }
+
+  /** Icicles hang from a separate edge (a window's bottom). */
+  get hangsBelow(): boolean {
+    return this.hang && this.hangY !== this.y;
   }
 
   /** Current length of icicle i: grows with the snow above it. */
   icicleLength(i: number): number {
     const c = this.icCol[i];
-    const fill = Math.min(1, this.h[c] / (this.maxH * 0.55));
-    return fill * fill * this.icLen[i] * ICICLE_MAX_LEN * this.scale;
+    // Icicles start once the cap above is about a third full, and reach full
+    // length when it's about two-thirds full.
+    const t = Math.max(0, Math.min(1, (this.h[c] / this.maxH - 0.3) / 0.38));
+    const fill = t * t * (3 - 2 * t);
+    return fill * this.icLen[i] * this.icMax;
   }
 
   /** Lower every column; returns true while any snow is left. */
@@ -180,7 +212,8 @@ export class Ledge {
   }
 
   deposit(c: number, mass: number): void {
-    const dh = mass / this.colW;
+    const boost = this.kind === LedgeKind.Window ? WINDOW_ACCUM : this.kind === LedgeKind.Icon ? ICON_ACCUM : 1;
+    const dh = (mass * boost) / this.colW;
     this.add(c, dh * 0.5);
     this.add(c - 1, dh * 0.25);
     this.add(c + 1, dh * 0.25);
@@ -210,26 +243,40 @@ export class Ledge {
       if (c < lo) lo = c;
       hi = c + 1;
     }
-    // Window ends: snow beyond the slope limit slides off and falls.
     if (this.kind !== LedgeKind.Ground) {
-      if (h[0] > s) {
-        this.spillL += (h[0] - s) * this.colW;
-        h[0] = s;
+      // Puffy caps: a little diffusion rounds off the graininess of single flakes.
+      for (let c = 1; c < n - 1; c++) {
+        const lap = h[c - 1] + h[c + 1] - 2 * h[c];
+        if (lap > 0.05 || lap < -0.05) {
+          h[c] = Math.min(ceil[c], h[c] + lap * CAP_SMOOTH);
+          if (c - 1 < lo) lo = c - 1;
+          if (c + 1 > hi) hi = c + 1;
+        }
+      }
+    }
+    // Window ends: caps hold nearly full height right to the edge (they're
+    // drawn with a rounded overhang); beyond that, snow slides off and falls.
+    if (this.kind !== LedgeKind.Ground) {
+      const endL = ceil[0] * 0.85;
+      if (h[0] > endL) {
+        this.spillL += (h[0] - endL) * this.colW;
+        h[0] = endL;
         lo = 0;
         if (hi < 0) hi = 0;
         if (this.spillL > SPILL_CLUMP * this.scale) {
-          emit(this.x - this.colW, this.y - s, -8 * this.scale, 10 * this.scale, this.spillL, this.scale);
+          emit(this.x - this.colW, this.y - endL, -8 * this.scale, 10 * this.scale, this.spillL, this.scale);
           this.spillL = 0;
         }
       }
       const e = n - 1;
-      if (h[e] > s) {
-        this.spillR += (h[e] - s) * this.colW;
-        h[e] = s;
+      const endR = ceil[e] * 0.85;
+      if (h[e] > endR) {
+        this.spillR += (h[e] - endR) * this.colW;
+        h[e] = endR;
         hi = e;
         if (lo > e) lo = e;
         if (this.spillR > SPILL_CLUMP * this.scale) {
-          emit(this.x + this.width + this.colW, this.y - s, 8 * this.scale, 10 * this.scale, this.spillR, this.scale);
+          emit(this.x + this.width + this.colW, this.y - endR, 8 * this.scale, 10 * this.scale, this.spillR, this.scale);
           this.spillR = 0;
         }
       }
@@ -262,6 +309,23 @@ export class Ledge {
         );
       }
       budget -= pieces;
+    }
+    // Window icicles snap off and fall as small shards.
+    if (this.hangsBelow) {
+      for (let i = 0; i < this.icCol.length; i++) {
+        const c = this.icCol[i];
+        if (!this.hmask[c]) continue;
+        const len = this.icicleLength(i);
+        if (len < 2 * k) continue;
+        emit(
+          this.x + (c + 0.5) * this.colW,
+          this.hangY + len * 0.4,
+          vx * 0.5 + (Math.random() - 0.5) * 20 * k,
+          vy * 0.5 + 30 * k,
+          len * 1.2 * k,
+          k,
+        );
+      }
     }
     this.h.fill(0);
     this.spillL = this.spillR = 0;
@@ -312,6 +376,7 @@ export class LedgeSet {
     this.opts = { ...o };
     this.sync(this.surfaces, now);
     if (iciclesChanged) for (const l of this.list) if (l.kind === LedgeKind.Ground) this.pushBox(l);
+    // Window icicles follow opts.icicles through computeMask (run by sync).
   }
 
   /** Snow switched off: melt everything. Call each frame; cheap when done. */
@@ -341,8 +406,14 @@ export class LedgeSet {
   }
 
   private pushBox(l: Ledge): void {
-    const pad = 4 * l.scale;
+    const pad = 7 * l.scale;
     this.boxes.push(l.x - pad - l.colW, l.y - l.maxH - pad, l.width + 2 * pad + 2 * l.colW, l.maxH + pad + l.below);
+    if (l.hangsBelow) this.pushHangBox(l, 0, l.cols - 1);
+  }
+
+  private pushHangBox(l: Ledge, c0: number, c1: number): void {
+    const k = l.scale;
+    this.boxes.push(l.x + (c0 - 3) * l.colW, l.hangY - 2 * k, (c1 - c0 + 7) * l.colW, l.icMax + 6 * k);
   }
 
   private monitorForEdge(r: Rect): MonitorInfo | undefined {
@@ -421,7 +492,13 @@ export class LedgeSet {
     if (this.opts.windows) s.windows.forEach((w, z) => {
       const m = this.monitorForEdge(w.rect);
       if (!m || w.rect.y < m.rect.y + MIN_TOP_GAP * m.scale) return;
-      upsert(`w${w.id}`, LedgeKind.Window, w.rect.x, w.rect.y, w.rect.w, m.scale, z);
+      const l = upsert(`w${w.id}`, LedgeKind.Window, w.rect.x, w.rect.y, w.rect.w, m.scale, z);
+      const bottom = w.rect.y + w.rect.h;
+      if (l.hangY !== bottom) {
+        if (l.hangsBelow) this.pushHangBox(l, 0, l.cols - 1);
+        l.hangY = bottom;
+        if (l.hangsBelow) this.pushHangBox(l, 0, l.cols - 1);
+      }
     });
     // Desktop icons sit behind every window (z after the last window).
     if (this.opts.icons) {
@@ -474,6 +551,40 @@ export class LedgeSet {
       if (l.h[c] > ceil[c]) l.h[c] = ceil[c];
       if (mask[c] !== prevMask[c]) l.markDirty(c, c);
     }
+    if (l.kind === LedgeKind.Window) this.computeHangMask(l);
+  }
+
+  /** Where a window's bottom edge is visible for icicles. */
+  private computeHangMask(l: Ledge): void {
+    const hm = l.hmask;
+    const prev = hm.slice();
+    const wasHanging = l.hangsBelow;
+    hm.fill(0);
+    const y = l.hangY + 2;
+    if (this.opts.icicles) {
+      for (const m of this.monitors) {
+        const r = m.rect;
+        // Not off-screen, and not down behind the taskbar.
+        if (y < r.y || y >= Math.min(r.y + r.h, m.work.y + m.work.h) - 4 * m.scale) continue;
+        const [c0, c1] = l.colRange(r.x, r.x + r.w);
+        hm.fill(1, c0, c1);
+      }
+      for (let j = 0; j < l.z; j++) {
+        const r = this.windows[j].rect;
+        if (r.y <= y && y < r.y + r.h) {
+          const [c0, c1] = l.colRange(r.x, r.x + r.w);
+          hm.fill(0, c0, c1);
+        }
+      }
+    }
+    let any = false;
+    let changed = false;
+    for (let c = 0; c < l.cols; c++) {
+      if (hm[c]) any = true;
+      if (hm[c] !== prev[c]) changed = true;
+    }
+    l.hang = any;
+    if (changed || wasHanging !== l.hangsBelow) this.pushHangBox(l, 0, l.cols - 1);
   }
 
   private buildBuckets(): void {
@@ -536,6 +647,11 @@ export class LedgeSet {
       const b = a && l.relax(this.emit);
       l.active = b;
     }
+  }
+
+  /** Pile renderer: redraw the icicle strip under a window for a dirty column span. */
+  hangBoxFor(l: Ledge, c0: number, c1: number): void {
+    if (l.hangsBelow) this.pushHangBox(l, c0, c1);
   }
 
   get(id: string): Ledge | undefined {
