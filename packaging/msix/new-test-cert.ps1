@@ -19,6 +19,8 @@
 param(
   [string] $Publisher = "CN=FrostbiteDev",
   [string] $OutFile = "frostbite-test.pfx",
+  # Public part only: what a tester imports to trust the signed .msix.
+  [string] $CerFile = "frostbite-test.cer",
   [Parameter(Mandatory)] [SecureString] $Password
 )
 $ErrorActionPreference = "Stop"
@@ -26,4 +28,5 @@ $cert = New-SelfSignedCertificate -Type Custom -Subject $Publisher -KeyUsage Dig
   -FriendlyName "Frostbite MSIX test signing" -CertStoreLocation "Cert:\CurrentUser\My" `
   -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
 Export-PfxCertificate -Cert $cert -FilePath $OutFile -Password $Password | Out-Null
-Write-Host "Wrote $OutFile (subject $Publisher, thumbprint $($cert.Thumbprint))"
+Export-Certificate -Cert $cert -FilePath $CerFile | Out-Null
+Write-Host "Wrote $OutFile and $CerFile (subject $Publisher, thumbprint $($cert.Thumbprint))"

@@ -1,0 +1,57 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Type-check frontend
+        run: npm run typecheck
+
+      - name: Rust tests
+        run: cargo test -p frostbite -p frostbite-platform
+
+      - name: Build NSIS installer
+        run: npm run build:nsis
+
+      - name: Build MSIX (signed with a throwaway test certificate)
+        shell: pwsh
+        run: |
+          $pw = ConvertTo-SecureString "frostbite-ci-test" -AsPlainText -Force
+          ./packaging/msix/new-test-cert.ps1 -Password $pw -OutFile ci-test.pfx -CerFile target/release/bundle/msix-test-cert.cer
+          ./packaging/msix/build-msix.ps1 -SkipBuild -CertificatePath ci-test.pfx -CertificatePassword $pw
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frostbite-installer
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Upload MSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frostbite-msix-test
+          path: |
+            target/release/bundle/msix/*.msix
+            target/release/bundle/msix-test-cert.cer
+          if-no-files-found: error
