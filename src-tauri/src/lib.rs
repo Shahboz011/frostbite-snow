@@ -50,7 +50,12 @@ pub fn run() {
 fn load_settings(app: &AppHandle<Wry>) {
     let state = app.state::<AppState>();
     let path = app.path().app_config_dir().ok().map(settings::path_in);
-    let first_run = path.as_deref().is_some_and(|p| !p.exists());
+    // The wallpaper has never been offered when there's no settings file yet
+    // (fresh install) or the file predates the setting (upgrade from an older
+    // build; uninstalling keeps the settings file).
+    let first_run = path.as_deref().is_some_and(|p| {
+        std::fs::read_to_string(p).map_or(true, |t| !t.contains("\"winterWallpaper\""))
+    });
     let mut s = path.as_deref().map(Settings::load).unwrap_or_default();
     // The OS is the source of truth for autostart (the user may have changed
     // it elsewhere, e.g. reinstalled).
@@ -61,7 +66,7 @@ fn load_settings(app: &AppHandle<Wry>) {
     *state.settings.lock().unwrap() = s.clone();
 
     if first_run {
-        // Save now so the next launch isn't a "first run" again.
+        // Save now (with the new key) so this happens only once.
         if let Some(p) = path.as_deref() {
             if let Err(e) = s.save(p) {
                 eprintln!("frostbite: saving settings failed: {e}");
