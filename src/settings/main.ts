@@ -40,6 +40,13 @@ const TOGGLES: Toggle[] = [
     desc: "Flies by every 10 minutes and drops gifts. Click a gift to open it.",
     action: { id: "santaNow", label: "Send now" },
   },
+  {
+    key: "polarChase",
+    section: "fun",
+    name: "Fish thief",
+    desc: "Every 12 minutes a penguin steals a polar bear's fish and the chase is on. Click the bear to trip it.",
+    action: { id: "polarNow", label: "Play now" },
+  },
   { key: "winterWallpaper", section: "desktop", name: "Winter wallpaper", desc: "Turn off to get your own wallpaper back" },
   { key: "launchAtStartup", section: "desktop", name: "Launch at startup", desc: "Start Frostbite when you sign in" },
 ];
@@ -65,7 +72,7 @@ const api = {
   save(s: Settings): void {
     if (native) void invoke("update_settings", { settings: s });
   },
-  call(cmd: "send_santa" | "shake_snow" | "quit_app"): void {
+  call(cmd: "send_santa" | "send_polar" | "shake_snow" | "quit_app"): void {
     if (native) void invoke(cmd);
     else console.log(`[mock] ${cmd}`);
   },
@@ -137,6 +144,8 @@ function render(): void {
   for (const id of ["snowfall", "settle", "fun"]) $(id).classList.toggle("dim", !s.enabled);
   const santaNow = document.getElementById("santaNow") as HTMLButtonElement | null;
   if (santaNow) santaNow.disabled = !(s.santa && s.enabled);
+  const polarNow = document.getElementById("polarNow") as HTMLButtonElement | null;
+  if (polarNow) polarNow.disabled = !(s.polarChase && s.enabled);
 }
 
 /** A few slow flakes drifting across the header. */
@@ -188,6 +197,7 @@ async function start(): Promise<void> {
   }
   $<HTMLInputElement>("wind").addEventListener("input", (e) => change({ wind: Number((e.target as HTMLInputElement).value) / 3 }));
   $("santaNow")?.addEventListener("click", () => api.call("send_santa"));
+  $("polarNow")?.addEventListener("click", () => api.call("send_polar"));
   $("shake").addEventListener("click", () => api.call("shake_snow"));
   $("quit").addEventListener("click", () => api.call("quit_app"));
 

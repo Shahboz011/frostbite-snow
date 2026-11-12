@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fish Thief Preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1b3a5c; }
+      canvas { display: block; width: 100vw; height: 100vh; }
+      #ui { position: fixed; top: 10px; left: 10px; display: flex; flex-wrap: wrap; gap: 6px; font: 13px system-ui; }
+      #ui button { padding: 6px 10px; border: 0; border-radius: 6px; background: #fff; cursor: pointer; }
+      #ui button.on { background: #f2c14e; }
+      #hint { position: fixed; bottom: 56px; left: 0; right: 0; text-align: center; font: 12px system-ui; color: rgba(255,255,255,0.7); pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="ui">
+      <button data-end="random" class="on">Chase (random ending)</button>
+      <button data-end="escape">Ending: penguin escapes</button>
+      <button data-end="drop">Ending: drops the fish</button>
+      <button data-end="share">Ending: shares the fish</button>
+      <button id="close">Close-up</button>
+    </div>
+    <div id="hint">Click the bear to make it trip. Click the penguin to make it jump.</div>
+    <script type="module" src="/src/critterPreview.ts"></script>
+  </body>
+</html>

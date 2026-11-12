@@ -34,6 +34,8 @@ pub struct Settings {
     pub winter_wallpaper: bool,
     /// Santa flies over every 10 minutes and drops gifts.
     pub santa: bool,
+    /// The polar bear chases a penguin that stole its fish, every 12 minutes.
+    pub polar_chase: bool,
 }
 
 impl Default for Settings {
@@ -51,6 +53,7 @@ impl Default for Settings {
             launch_at_startup: false,
             winter_wallpaper: true,
             santa: true,
+            polar_chase: true,
         }
     }
 }

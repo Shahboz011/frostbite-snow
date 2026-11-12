@@ -51,6 +51,8 @@ export interface Settings {
   winterWallpaper: boolean;
   /** Santa flies over every 10 minutes and drops gifts. */
   santa: boolean;
+  /** A polar bear chases a penguin that stole its fish, every 12 minutes. */
+  polarChase: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   launchAtStartup: false,
   winterWallpaper: true,
   santa: true,
+  polarChase: true,
 };
 
 export interface Power {

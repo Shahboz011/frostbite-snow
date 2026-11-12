@@ -19,6 +19,7 @@ pub struct TrayItems {
     snowballs: CheckMenuItem<Wry>,
     wallpaper: CheckMenuItem<Wry>,
     santa: CheckMenuItem<Wry>,
+    polar: CheckMenuItem<Wry>,
     startup: Option<CheckMenuItem<Wry>>,
 }
 
@@ -57,6 +58,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let wallpaper = check("wallpaper", "Winter wallpaper", s.winter_wallpaper)?;
     let santa = check("santa", "Santa (every 10 min)", s.santa)?;
     let santa_now = MenuItemBuilder::with_id("santa-now", "Send Santa now").build(app)?;
+    let polar = check("polar", "Fish thief (every 12 min)", s.polar_chase)?;
     let open_settings = MenuItemBuilder::with_id("settings", "Settings…").build(app)?;
     let platform_autostart = app.state::<AppState>().platform.autostart_enabled();
     let startup = match platform_autostart {
@@ -91,6 +93,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .item(&snowballs)
         .item(&santa)
         .item(&santa_now)
+        .item(&polar)
         .separator()
         .item(&wallpaper);
     if let Some(st) = &startup {
@@ -125,6 +128,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         snowballs,
         wallpaper,
         santa,
+        polar,
         startup,
     });
     Ok(())
@@ -139,6 +143,7 @@ fn on_menu(app: &AppHandle<Wry>, id: &str) {
             let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://santa", ());
         }
         "santa" => update(app, |s| s.santa = !s.santa),
+        "polar" => update(app, |s| s.polar_chase = !s.polar_chase),
         "shake" => {
             use tauri::Emitter;
             let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://shake", ());
@@ -191,6 +196,7 @@ pub fn sync(app: &AppHandle<Wry>, s: &Settings) {
     let _ = t.snowballs.set_checked(s.snowballs);
     let _ = t.wallpaper.set_checked(s.winter_wallpaper);
     let _ = t.santa.set_checked(s.santa);
+    let _ = t.polar.set_checked(s.polar_chase);
     if let Some(st) = &t.startup {
         let _ = st.set_checked(s.launch_at_startup);
     }

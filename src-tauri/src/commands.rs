@@ -67,6 +67,11 @@ pub fn send_santa(app: AppHandle<Wry>) {
 }
 
 #[tauri::command]
+pub fn send_polar(app: AppHandle<Wry>) {
+    let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://polar", ());
+}
+
+#[tauri::command]
 pub fn shake_snow(app: AppHandle<Wry>) {
     let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://shake", ());
 }
