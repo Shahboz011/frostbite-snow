@@ -46,4 +46,7 @@ impl Platform for StubPlatform {
     fn restore_wallpaper(&self) -> Result<()> {
         Ok(())
     }
+    fn launched_at_login(&self) -> bool {
+        std::env::args().any(|a| a == "--autostart")
+    }
 }

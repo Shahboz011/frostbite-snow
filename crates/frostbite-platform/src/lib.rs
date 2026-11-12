@@ -183,6 +183,9 @@ pub trait Platform: Send + Sync {
     fn set_wallpaper(&self, image: &std::path::Path) -> Result<()>;
     /// Put the user's own wallpaper back (unless they changed it since).
     fn restore_wallpaper(&self) -> Result<()>;
+
+    /// Started by the OS at sign-in ("Launch at startup"), not by the user.
+    fn launched_at_login(&self) -> bool;
 }
 
 /// The backend for the current OS.

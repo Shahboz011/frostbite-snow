@@ -10,5 +10,9 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: false,
+    rollupOptions: {
+      // The snow overlay and the Settings window.
+      input: { main: "index.html", settings: "settings.html" },
+    },
   },
 });

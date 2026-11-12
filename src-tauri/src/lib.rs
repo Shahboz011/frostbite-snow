@@ -3,6 +3,7 @@ mod layout;
 mod overlay;
 mod poll;
 mod settings;
+mod settings_window;
 mod state;
 mod tray;
 
@@ -16,23 +17,37 @@ pub const OVERLAY_LABEL: &str = "overlay";
 
 pub fn run() {
     tauri::Builder::default()
-        // Must be first: a second launch (e.g. autostart + a manual start) just
-        // turns the snow back on in the running instance.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let mut s = app.state::<AppState>().settings.lock().unwrap().clone();
-            s.enabled = true;
-            apply_settings(app, s);
+        // Must be first: launching again (clicking the app icon while it runs)
+        // opens Settings in the running instance.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if !args.iter().any(|a| a == "--autostart") {
+                settings_window::show(app);
+            }
         }))
         .manage(AppState::new())
-        .invoke_handler(tauri::generate_handler![commands::boot, commands::set_hit_regions])
+        .invoke_handler(tauri::generate_handler![
+            commands::boot,
+            commands::set_hit_regions,
+            commands::get_settings,
+            commands::update_settings,
+            commands::send_santa,
+            commands::shake_snow,
+            commands::quit_app,
+        ])
         .setup(|app| {
             load_settings(app.handle());
             overlay::init(app.handle())?;
             tray::build(app.handle())?;
             poll::spawn(app.handle().clone());
+            // Opened by the user (Start menu, desktop icon): show Settings.
+            // Started at sign-in: stay quietly in the tray.
+            if !app.state::<AppState>().platform.launched_at_login() {
+                settings_window::show(app.handle());
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
+            settings_window::on_event(window, event);
             // A window spanning monitors with different DPIs gets WM_DPICHANGED
             // when its "home" monitor changes, and the toolkit resizes it to the
             // suggested rect. Put it back to exactly cover the virtual screen.
@@ -124,5 +139,6 @@ pub fn apply_settings(app: &AppHandle<Wry>, mut next: Settings) {
         }
     }
     tray::sync(app, &next);
-    let _ = app.emit_to(OVERLAY_LABEL, "frostbite://settings", &next);
+    // Overlay and Settings window both listen.
+    let _ = app.emit("frostbite://settings", &next);
 }

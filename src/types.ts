@@ -49,6 +49,8 @@ export interface Settings {
   snowballs: boolean;
   launchAtStartup: boolean;
   winterWallpaper: boolean;
+  /** Santa flies over every 10 minutes and drops gifts. */
+  santa: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   snowballs: false,
   launchAtStartup: false,
   winterWallpaper: true,
+  santa: true,
 };
 
 export interface Power {

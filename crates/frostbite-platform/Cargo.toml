@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 version = "0.61"
 features = [
   "ApplicationModel",
+  "ApplicationModel_Activation",
   "Foundation",
   "Win32_Foundation",
   "Win32_Graphics_Dwm",

@@ -1,4 +1,4 @@
-//! Tray icon and menu. Left-click toggles snow; right-click opens the menu.
+//! Tray icon and menu. Left-click opens Settings; right-click opens the menu.
 
 use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -18,6 +18,7 @@ pub struct TrayItems {
     icicles: CheckMenuItem<Wry>,
     snowballs: CheckMenuItem<Wry>,
     wallpaper: CheckMenuItem<Wry>,
+    santa: CheckMenuItem<Wry>,
     startup: Option<CheckMenuItem<Wry>>,
 }
 
@@ -54,6 +55,9 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let icicles = check("icicles", "Icicles", s.icicles)?;
     let snowballs = check("snowballs", "Snowball fights", s.snowballs)?;
     let wallpaper = check("wallpaper", "Winter wallpaper", s.winter_wallpaper)?;
+    let santa = check("santa", "Santa (every 10 min)", s.santa)?;
+    let santa_now = MenuItemBuilder::with_id("santa-now", "Send Santa now").build(app)?;
+    let open_settings = MenuItemBuilder::with_id("settings", "Settings…").build(app)?;
     let platform_autostart = app.state::<AppState>().platform.autostart_enabled();
     let startup = match platform_autostart {
         Some(on) => Some(check("startup", "Launch at startup", on)?),
@@ -72,6 +76,8 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let quit = MenuItemBuilder::with_id("quit", "Quit Frostbite").build(app)?;
 
     let mut menu = MenuBuilder::new(app)
+        .item(&open_settings)
+        .separator()
         .item(&snow)
         .item(&int_sub.build()?)
         .item(&wind_sub.build()?)
@@ -83,8 +89,10 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .item(&snowman)
         .item(&icicles)
         .item(&snowballs)
-        .item(&wallpaper)
-        .separator();
+        .item(&santa)
+        .item(&santa_now)
+        .separator()
+        .item(&wallpaper);
     if let Some(st) = &startup {
         menu = menu.item(st);
     }
@@ -97,7 +105,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .on_menu_event(|app, ev| on_menu(app, ev.id().as_ref()))
         .on_tray_icon_event(|tray, ev| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
-                update(tray.app_handle(), |s| s.enabled = !s.enabled);
+                crate::settings_window::show(tray.app_handle());
             }
         });
     if let Some(icon) = app.default_window_icon() {
@@ -116,6 +124,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         icicles,
         snowballs,
         wallpaper,
+        santa,
         startup,
     });
     Ok(())
@@ -124,6 +133,12 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
 fn on_menu(app: &AppHandle<Wry>, id: &str) {
     match id {
         "quit" => app.exit(0),
+        "settings" => crate::settings_window::show(app),
+        "santa-now" => {
+            use tauri::Emitter;
+            let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://santa", ());
+        }
+        "santa" => update(app, |s| s.santa = !s.santa),
         "shake" => {
             use tauri::Emitter;
             let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://shake", ());
@@ -175,6 +190,7 @@ pub fn sync(app: &AppHandle<Wry>, s: &Settings) {
     let _ = t.icicles.set_checked(s.icicles);
     let _ = t.snowballs.set_checked(s.snowballs);
     let _ = t.wallpaper.set_checked(s.winter_wallpaper);
+    let _ = t.santa.set_checked(s.santa);
     if let Some(st) = &t.startup {
         let _ = st.set_checked(s.launch_at_startup);
     }

@@ -1,6 +1,6 @@
 use frostbite_platform::{Rect, Surfaces};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State, Wry};
 
 use crate::{layout::Layout, settings::Settings, state::Power, AppState};
 
@@ -34,6 +34,46 @@ pub struct RectIn {
     y: i32,
     w: i32,
     h: i32,
+}
+
+/// What the Settings window shows.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsView {
+    settings: Settings,
+    /// "Launch at startup" works on this platform.
+    autostart_supported: bool,
+    version: String,
+}
+
+#[tauri::command]
+pub fn get_settings(app: AppHandle<Wry>, state: State<'_, AppState>) -> SettingsView {
+    SettingsView {
+        settings: state.settings.lock().unwrap().clone(),
+        autostart_supported: state.platform.autostart_enabled().is_some(),
+        version: app.package_info().version.to_string(),
+    }
+}
+
+/// The Settings window changed something.
+#[tauri::command]
+pub fn update_settings(app: AppHandle<Wry>, settings: Settings) {
+    crate::apply_settings(&app, settings.sanitize());
+}
+
+#[tauri::command]
+pub fn send_santa(app: AppHandle<Wry>) {
+    let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://santa", ());
+}
+
+#[tauri::command]
+pub fn shake_snow(app: AppHandle<Wry>) {
+    let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://shake", ());
+}
+
+#[tauri::command]
+pub fn quit_app(app: AppHandle<Wry>) {
+    app.exit(0);
 }
 
 /// Overlay-relative regions that should receive the mouse (snowman, a pile

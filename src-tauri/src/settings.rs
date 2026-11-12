@@ -32,6 +32,8 @@ pub struct Settings {
     /// Show the bundled winter wallpaper (applied on first run; turning it off
     /// restores the user's own).
     pub winter_wallpaper: bool,
+    /// Santa flies over every 10 minutes and drops gifts.
+    pub santa: bool,
 }
 
 impl Default for Settings {
@@ -48,6 +50,7 @@ impl Default for Settings {
             snowballs: false,
             launch_at_startup: false,
             winter_wallpaper: true,
+            santa: true,
         }
     }
 }

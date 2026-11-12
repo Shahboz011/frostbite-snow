@@ -169,6 +169,10 @@ impl Platform for WindowsPlatform {
         wallpaper::restore()
     }
 
+    fn launched_at_login(&self) -> bool {
+        system::launched_at_login()
+    }
+
     fn desktop_icons(&self) -> Option<Vec<Rect>> {
         let mut guard = self.icons.lock().ok()?;
         if guard.as_ref().is_some_and(|r| !r.alive()) {

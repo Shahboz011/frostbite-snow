@@ -176,6 +176,25 @@ fn set_packaged_autostart(enable: bool) -> Result<()> {
     })
 }
 
+/// Started at sign-in: the Run-key entry passes `--autostart`; a packaged
+/// app is activated through its StartupTask.
+pub fn launched_at_login() -> bool {
+    if std::env::args().any(|a| a == "--autostart") {
+        return true;
+    }
+    if !is_packaged() {
+        return false;
+    }
+    use windows::ApplicationModel::Activation::ActivationKind;
+    on_worker(|| {
+        let args = windows::ApplicationModel::AppInstance::GetActivatedEventArgs()
+            .map_err(|e| PlatformError(format!("activation args: {e}")))?;
+        let kind = args.Kind().map_err(|e| PlatformError(e.to_string()))?;
+        Ok(kind == ActivationKind::StartupTask)
+    })
+    .unwrap_or(false)
+}
+
 pub fn autostart_enabled() -> bool {
     if is_packaged() {
         return packaged_autostart_enabled();
