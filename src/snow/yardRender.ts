@@ -3,7 +3,7 @@
  * thrown snowballs and the "grab here" hint on their own canvas. Redrawn only
  * when the yard says something changed.
  */
-import { DEBRIS_LIFE, THROW_ANIM, type Ball, type Debris, type Outfit, type Stack, type Yard } from "./yard";
+import { DEBRIS_LIFE, THROW_ANIM, type Ball, type Chunk, type Debris, type Outfit, type Splat, type Stack, type Yard } from "./yard";
 
 const COAL = "#1f2228";
 const TWIG = "#5b3d22";
@@ -44,7 +44,14 @@ export class YardRenderer {
   render(y: Yard): void {
     const ctx = this.ctx;
     const empty =
-      !y.stacks.length && !y.held && !y.falling.length && !y.shots.length && !y.debris.length && !y.armed;
+      !y.stacks.length &&
+      !y.held &&
+      !y.falling.length &&
+      !y.shots.length &&
+      !y.debris.length &&
+      !y.chunks.length &&
+      !y.splats.length &&
+      !y.armed;
     if (empty && !this.hadContent) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -57,6 +64,8 @@ export class YardRenderer {
     for (const f of y.falling) this.ball(f.ball);
     if (y.held) this.ball(y.held.ball);
     for (const d of y.debris) this.debris(d);
+    for (const s of y.splats) this.splat(s);
+    for (const c of y.chunks) this.chunk(c);
     for (const p of y.shots) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
@@ -82,6 +91,63 @@ export class YardRenderer {
     ctx.lineWidth = 3.5 * k;
     ctx.strokeStyle = "rgba(60, 90, 130, 0.25)";
     ctx.stroke();
+  }
+
+  /** A broken piece: an irregular lump, shaded like the ball it came from. */
+  private chunk(c: Chunk): void {
+    const ctx = this.ctx;
+    const fade = c.rest > 0 ? Math.max(0, 1 - c.rest / 0.7) : 1;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.65 * fade;
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot);
+    const n = c.pts.length;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const r = c.r * c.pts[i];
+      if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    const g = ctx.createRadialGradient(-c.r * 0.3, -c.r * 0.35, c.r * 0.1, 0, 0, c.r);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.65, "#eef3fa");
+    g.addColorStop(1, "#bccbe0");
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 0.9 * c.k;
+    ctx.strokeStyle = "rgba(88, 108, 140, 0.5)";
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Snow flattened against a screen edge, sliding down and fading. */
+  private splat(s: Splat): void {
+    const ctx = this.ctx;
+    const u = s.t / 1.6;
+    const alpha = u < 0.6 ? 0.95 : 0.95 * (1 - (u - 0.6) / 0.4);
+    const slide = s.side === 0 ? 0 : u * u * s.r * 1.2;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.translate(s.x, s.y + slide);
+    if (s.side === 0) ctx.rotate(Math.PI / 2);
+    else if (s.side > 0) ctx.scale(-1, 1);
+    // Flat blob against the edge with a few drips.
+    const g = ctx.createLinearGradient(0, 0, s.r * 0.6, 0);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(1, "#d3deec");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s.r * 0.45, s.r * 1.05, 0, -Math.PI / 2, Math.PI / 2);
+    ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const yy = (i / 3 - 0.5) * s.r * 1.4;
+      ctx.beginPath();
+      ctx.arc(s.r * (0.35 + (i % 2) * 0.12), yy, s.r * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private ball(b: Ball): void {

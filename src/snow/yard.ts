@@ -31,6 +31,14 @@ const MAX_BALLS = 9;
 const STACK_OVERLAP = 0.82; // fraction of the lower radius the next ball sits into
 const SINK = 0.9; // a resting ball sits this fraction of r above the snow surface
 const DRAG_THRESHOLD = 6;
+/** A ball dropped from higher than this above where it lands shatters (px @100%). */
+const BREAK_DROP = 150;
+/** Hitting a screen edge faster than this shatters the ball (px/s @100%). */
+const WALL_BREAK_SPEED = 260;
+/** Released faster than this = thrown (keeps its momentum), px/s @100%. */
+const FLING_SPEED = 120;
+/** Seconds a shattered chunk lies on the snow before crumbling. */
+const CHUNK_REST = 0.7;
 
 export interface Ball {
   x: number;
@@ -126,6 +134,31 @@ export interface Stack {
   wavePhase: number;
 }
 
+/** A piece of a shattered snowball. `pts` is its outline, unit radius. */
+export interface Chunk {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  k: number;
+  rot: number;
+  vr: number;
+  pts: number[];
+  /** Time spent resting on the snow. */
+  rest: number;
+}
+
+/** Snow squashed flat against a screen edge, fading out. */
+export interface Splat {
+  x: number;
+  y: number;
+  r: number;
+  /** Which edge: -1 left, 1 right, 0 top. */
+  side: number;
+  t: number;
+}
+
 export interface Shot {
   x: number;
   y: number;
@@ -139,7 +172,10 @@ export interface Shot {
 
 interface Falling {
   ball: Ball;
+  vx: number;
   vy: number;
+  /** Height it was released at (for the shatter check). */
+  y0: number;
   target: Stack | null;
 }
 
@@ -154,10 +190,14 @@ export const THROW_ANIM = 0.5;
 
 export class Yard {
   stacks: Stack[] = [];
-  held: { ball: Ball; offY: number; tx: number; ty: number; rolling: boolean } | null = null;
+  held: { ball: Ball; offY: number; tx: number; ty: number; rolling: boolean; vx: number; vy: number } | null = null;
   falling: Falling[] = [];
   shots: Shot[] = [];
   debris: Debris[] = [];
+  chunks: Chunk[] = [];
+  splats: Splat[] = [];
+  /** Overlay size, for screen-edge hits. */
+  bounds = { w: Infinity, h: Infinity };
 
   /** Building allowed (snowman setting, snow on, taskbar snow on). */
   enabled = true;
@@ -196,7 +236,16 @@ export class Yard {
 
   /** Needs frames (animation or interaction in progress). */
   get busy(): boolean {
-    if (this.held || this.pending || this.falling.length || this.shots.length || this.debris.length || this.dwell > 0)
+    if (
+      this.held ||
+      this.pending ||
+      this.falling.length ||
+      this.shots.length ||
+      this.debris.length ||
+      this.chunks.length ||
+      this.splats.length ||
+      this.dwell > 0
+    )
       return true;
     for (const s of this.stacks) {
       if (s.knockT >= 0 || s.throwT > 0 || (s.balls.length === 3 && s.accT < 1)) return true;
@@ -311,7 +360,7 @@ export class Yard {
     if (got < Math.PI * r0 * r0 * 0.5) return false; // not enough snow here
     const r = Math.sqrt(got / Math.PI);
     const ball: Ball = { x, y: s.top - r * SINK, r, angle: 0, k };
-    this.held = { ball, offY: ball.y - y, tx: x, ty: y, rolling: true };
+    this.held = { ball, offY: ball.y - y, tx: x, ty: y, rolling: true, vx: 0, vy: 0 };
     this.armed = false;
     this.dwell = 0;
     this.dirty = true;
@@ -340,7 +389,7 @@ export class Yard {
         const ball = s.balls.pop()!;
         if (s.balls.length === 0) this.stacks.splice(this.stacks.indexOf(s), 1);
         else s.accT = 0;
-        this.held = { ball, offY: ball.y - p.y0, tx: x, ty: y, rolling: false };
+        this.held = { ball, offY: ball.y - p.y0, tx: x, ty: y, rolling: false, vx: 0, vy: 0 };
       }
       this.dirty = true;
     }
@@ -358,9 +407,11 @@ export class Yard {
       return;
     }
     if (this.held) {
-      const b = this.held.ball;
+      const h = this.held;
       this.held = null;
-      this.drop(b);
+      // Rolling along the pile = set it down; carried and flicked = thrown.
+      const fling = !h.rolling && Math.hypot(h.vx, h.vy) > FLING_SPEED * h.ball.k;
+      this.drop(h.ball, fling ? h.vx : 0, fling ? h.vy : 0);
     }
   }
 
@@ -370,9 +421,10 @@ export class Yard {
 
   // --- actions --------------------------------------------------------------
 
-  private drop(b: Ball): void {
+  private drop(b: Ball, vx = 0, vy = 0): void {
     let target: Stack | null = null;
-    for (const s of this.stacks) {
+    const thrown = vx !== 0 || vy !== 0;
+    for (const s of thrown ? [] : this.stacks) {
       if (s.knockT >= 0 || s.balls.length >= 3) continue;
       const t = s.balls[s.balls.length - 1];
       if (Math.abs(b.x - t.x) < t.r * 0.75 && b.r < t.r * 0.97 && b.y < t.y) {
@@ -380,7 +432,7 @@ export class Yard {
         break;
       }
     }
-    if (!target) {
+    if (!target && !thrown) {
       // Don't drop into another stack's footprint: slide off to its side.
       for (const s of this.stacks) {
         const base = s.balls[0];
@@ -388,7 +440,7 @@ export class Yard {
         if (Math.abs(b.x - base.x) < gap) b.x = base.x + (b.x < base.x ? -gap : gap);
       }
     }
-    this.falling.push({ ball: b, vy: 0, target });
+    this.falling.push({ ball: b, vx, vy, y0: b.y, target });
     this.dirty = true;
   }
 
@@ -463,6 +515,8 @@ export class Yard {
     for (const f of this.falling) this.burstBall(f.ball.x, f.ball.y, f.ball.r, f.ball.k, 0);
     if (this.held) this.burstBall(this.held.ball.x, this.held.ball.y, this.held.ball.r, this.held.ball.k, 0);
     this.falling = [];
+    this.chunks = [];
+    this.splats = [];
     this.held = null;
     this.pending = null;
     this.shots = [];
@@ -511,7 +565,8 @@ export class Yard {
     }
 
     this.updateDebris(dt);
-    this.updateHeld();
+    this.updateChunks(dt);
+    this.updateHeld(dt);
     this.updateFalling(dt);
     this.updateShots(dt);
     this.updateArming(dt);
@@ -623,10 +678,17 @@ export class Yard {
     }
   }
 
-  private updateHeld(): void {
+  private updateHeld(dt: number): void {
     const h = this.held;
     if (!h) return;
     const b = h.ball;
+    // Track how fast it's being carried, for throwing on release.
+    if (dt > 0) {
+      const ivx = (h.tx - b.x) / dt;
+      const ivy = (h.ty + h.offY - b.y) / dt;
+      h.vx += (ivx - h.vx) * 0.5;
+      h.vy += (ivy - h.vy) * 0.5;
+    }
     const nx = h.tx;
     const s = this.surface(nx);
     const want = h.ty + h.offY;
@@ -652,8 +714,15 @@ export class Yard {
         f.target = null;
       }
       f.vy += GRAVITY * b.k * dt;
+      f.vx -= f.vx * 0.25 * dt;
+      b.x += f.vx * dt;
       b.y += f.vy * dt;
+      b.angle += (f.vx * dt) / b.r;
       this.dirty = true;
+      if (this.hitEdge(f)) {
+        this.falling.splice(i, 1);
+        continue;
+      }
       if (f.target) {
         const t = f.target.balls[f.target.balls.length - 1];
         b.x += (t.x - b.x) * Math.min(1, dt * 14);
@@ -676,6 +745,13 @@ export class Yard {
       const rest = s.top - b.r * SINK;
       if (b.y >= rest) {
         b.y = rest;
+        // Dropped from high up, or thrown down hard: it breaks apart.
+        const speed = Math.hypot(f.vx, f.vy);
+        if (rest - f.y0 > BREAK_DROP * b.k || speed > Math.sqrt(2 * GRAVITY * BREAK_DROP) * b.k * 1.15) {
+          this.shatter(b, f.vx, f.vy, s.top);
+          this.falling.splice(i, 1);
+          continue;
+        }
         this.stacks.push({
           balls: [b],
           ledgeId: s.l.id,
@@ -698,6 +774,127 @@ export class Yard {
         });
         this.falling.splice(i, 1);
       }
+    }
+  }
+
+  /** Screen edges: a fast hit splats and shatters; a slow one just bumps. */
+  private hitEdge(f: Falling): boolean {
+    const b = f.ball;
+    const k = b.k;
+    let side = 0;
+    let speed = 0;
+    if (b.x - b.r < 0 && f.vx < 0) {
+      side = -1;
+      speed = -f.vx;
+      b.x = b.r;
+    } else if (b.x + b.r > this.bounds.w && f.vx > 0) {
+      side = 1;
+      speed = f.vx;
+      b.x = this.bounds.w - b.r;
+    } else if (b.y - b.r < 0 && f.vy < 0) {
+      side = 0;
+      speed = -f.vy;
+      b.y = b.r;
+    } else {
+      return false;
+    }
+    if (speed < WALL_BREAK_SPEED * k) {
+      if (side === 0) f.vy = -f.vy * 0.25;
+      else f.vx = -f.vx * 0.3;
+      return false;
+    }
+    const ex = side === 0 ? b.x : side < 0 ? 0 : this.bounds.w;
+    const ey = side === 0 ? 0 : b.y;
+    this.splats.push({ x: ex, y: ey, r: b.r, side, t: 0 });
+    // Bits fly back off the edge.
+    this.shatter(b, side === 0 ? f.vx * 0.4 : -side * speed * 0.35, side === 0 ? speed * 0.25 : f.vy * 0.4, Infinity);
+    return true;
+  }
+
+  /** Break a ball into chunks plus a puff of loose snow. */
+  private shatter(b: Ball, vx: number, vy: number, groundTop: number): void {
+    const k = b.k;
+    const dir = Math.sign(vx);
+    // Fine snow: half the ball goes back to the piles straight away.
+    const n = Math.max(10, Math.min(56, Math.round(b.r / (1.0 * k))));
+    const mass = (Math.PI * b.r * b.r * 0.5) / n;
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI * Math.random();
+      const sp = (60 + Math.random() * 160) * k;
+      this.emit(
+        b.x + (Math.random() - 0.5) * b.r,
+        Math.min(b.y, groundTop - 2 * k) - Math.random() * b.r * 0.5,
+        Math.cos(a) * sp + vx * 0.25,
+        Math.sin(a) * sp - 30 * k + Math.min(0, vy) * 0.1,
+        mass,
+        k,
+      );
+    }
+    // Chunks: a few irregular lumps that tumble, bounce and crumble.
+    const m = 3 + Math.min(5, Math.round(b.r / (8 * k)));
+    for (let i = 0; i < m; i++) {
+      const r = b.r * (0.22 + Math.random() * 0.2);
+      const pts: number[] = [];
+      const v = 6 + Math.floor(Math.random() * 3);
+      for (let j = 0; j < v; j++) pts.push(0.7 + Math.random() * 0.45);
+      const a = -Math.PI * (0.1 + 0.8 * Math.random());
+      const sp = (90 + Math.random() * 200) * k;
+      this.chunks.push({
+        x: b.x + (Math.random() - 0.5) * b.r * 0.8,
+        y: Math.min(b.y, groundTop - r) - Math.random() * b.r * 0.4,
+        vx: Math.cos(a) * sp + dir * 70 * k + vx * 0.2,
+        vy: Math.sin(a) * sp,
+        r,
+        k,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 14,
+        pts,
+        rest: 0,
+      });
+    }
+    this.dirty = true;
+  }
+
+  private updateChunks(dt: number): void {
+    for (let i = this.chunks.length - 1; i >= 0; i--) {
+      const c = this.chunks[i];
+      this.dirty = true;
+      if (c.rest > 0) {
+        c.rest += dt;
+        if (c.rest > CHUNK_REST) {
+          this.burstBall(c.x, c.y, c.r, c.k, 0);
+          this.chunks.splice(i, 1);
+        }
+        continue;
+      }
+      c.vy += GRAVITY * 0.8 * c.k * dt;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.rot += c.vr * dt;
+      if (c.x < c.r || c.x > this.bounds.w - c.r) {
+        c.x = Math.max(c.r, Math.min(this.bounds.w - c.r, c.x));
+        c.vx = -c.vx * 0.35;
+      }
+      const s = this.surface(c.x);
+      const floor = s ? s.top - c.r * 0.6 : this.bounds.h + c.r * 3;
+      if (c.y >= floor && c.vy > 0) {
+        c.y = floor;
+        if (c.vy > 160 * c.k) {
+          c.vy = -c.vy * 0.28;
+          c.vx *= 0.6;
+          c.vr *= 0.5;
+        } else {
+          c.vy = 0;
+          c.vx = 0;
+          c.rest = dt;
+        }
+      }
+      if (c.y > this.bounds.h + c.r * 2) this.chunks.splice(i, 1);
+    }
+    for (let i = this.splats.length - 1; i >= 0; i--) {
+      this.splats[i].t += dt;
+      this.dirty = true;
+      if (this.splats[i].t > 1.6) this.splats.splice(i, 1);
     }
   }
 
