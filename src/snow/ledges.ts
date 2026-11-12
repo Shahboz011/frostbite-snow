@@ -658,6 +658,25 @@ export class LedgeSet {
     return this.byId.get(id);
   }
 
+  /**
+   * Snow surface an object falling from prevY to y at x lands on (top of a
+   * visible window edge or the ground), or undefined. Icons are skipped: they
+   * sit behind every window.
+   */
+  landingAt(x: number, prevY: number, y: number): { ledge: Ledge; top: number } | undefined {
+    let best: { ledge: Ledge; top: number } | undefined;
+    for (const l of this.list) {
+      if (l.kind === LedgeKind.Icon) continue;
+      const rx = x - l.x;
+      if (rx < 0 || rx >= l.width) continue;
+      const c = (rx / l.colW) | 0;
+      if (!l.mask[c]) continue;
+      const top = l.y - l.h[c];
+      if (y >= top && prevY <= l.y + 0.5 && (!best || top < best.top)) best = { ledge: l, top };
+    }
+    return best;
+  }
+
   /** The ground ledge under screen x, if snow on the taskbar is enabled. */
   groundAt(x: number): Ledge | undefined {
     for (const l of this.list) {

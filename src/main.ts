@@ -5,12 +5,15 @@ import { createRenderer } from "./snow/renderer";
 import { MAX_FLAKES, SnowSim } from "./snow/sim";
 import { Yard } from "./snow/yard";
 import { YardRenderer } from "./snow/yardRender";
+import { Santa } from "./snow/santa";
+import { SantaLayer } from "./snow/santaLayer";
 import { DEFAULT_SETTINGS } from "./types";
 import type { Layout, Power, Settings, Surfaces } from "./types";
 
 const canvas = document.getElementById("snow") as HTMLCanvasElement;
 const pileCanvas = document.getElementById("piles") as HTMLCanvasElement;
 const objectCanvas = document.getElementById("objects") as HTMLCanvasElement;
+const santaCanvas = document.getElementById("santa") as HTMLCanvasElement;
 const debugEl = document.getElementById("debug") as HTMLDivElement;
 
 const bridge = createBridge();
@@ -33,6 +36,15 @@ let pileTimer = 0;
 
 const now = () => performance.now() / 1000;
 
+const santa = new Santa(sim.ledges, (x, y, vx, vy, m, k) => sim.emitClump(x, y, vx, vy, m, k), now());
+const santaLayer = new SantaLayer(santaCanvas);
+/** If a flight comes due while it can't happen (fullscreen app, off), try again this soon. */
+const SANTA_RETRY = 60;
+
+function santaAllowed(): boolean {
+  return settings.santa && settings.enabled;
+}
+
 /** Start rendering unless paused (fullscreen app / lock screen). */
 function wake(): void {
   if (!power.paused) loop.wake();
@@ -48,6 +60,8 @@ function resize(): void {
   renderer.resize(w, h, s);
   piles.resize(w, h, s);
   yardRenderer.resize(w, h, s);
+  santaLayer.resize(w, h, s);
+  santa.dirty = true;
   yard.dirty = true;
   if (debug) drawMonitorOutlines();
   wake();
@@ -56,6 +70,7 @@ function resize(): void {
 function applyLayout(l: Layout): void {
   layout = l;
   sim.setLayout(l);
+  santa.setLayout(l);
   sim.ledges.setLayout(l, surfaces, now());
   resize();
 }
@@ -63,6 +78,7 @@ function applyLayout(l: Layout): void {
 function applySurfaces(s: Surfaces): void {
   surfaces = s;
   sim.ledges.sync(s, now());
+  santa.setSurfaces(s);
   wake();
 }
 
@@ -82,6 +98,7 @@ function applySettings(s: Settings): void {
   );
   yard.enabled = s.snowman && s.enabled && s.snowOnTaskbar;
   yard.throwing = s.snowballs;
+  if (!santaAllowed()) santa.clear();
   updateFpsCap();
   wake();
 }
@@ -95,14 +112,14 @@ function applyPower(p: Power): void {
 
 /** Tell Rust where the overlay should take the mouse; set the cursor shape. */
 function syncInteraction(): void {
-  const regions = yard.hitRegions();
+  const regions = yard.hitRegions().concat(santa.hitRegions());
   const capture = yard.capturing;
   const key = JSON.stringify(regions) + capture;
   if (key !== hitKey) {
     hitKey = key;
     bridge.setHitRegions(regions, capture);
   }
-  const cur = yard.cursorStyle;
+  const cur = yard.cursorStyle || santa.cursorStyle;
   if (document.body.style.cursor !== cur) document.body.style.cursor = cur;
 }
 
@@ -129,6 +146,15 @@ function installPointer(): void {
         return;
       }
       if (e.button !== 0) return;
+      const gift = santa.giftAt(x, y);
+      if (gift) {
+        santa.open(gift);
+        e.preventDefault();
+        e.stopPropagation();
+        syncInteraction();
+        wake();
+        return;
+      }
       yard.setCursor(x, y);
       if (!yard.wants(x, y) || !yard.pointerDown(x, y)) return;
       e.preventDefault();
@@ -197,6 +223,13 @@ const loop = new FrameLoop((dt) => {
     syncInteraction();
   }
 
+  santa.update(dt);
+  if (santa.dirty) {
+    santa.dirty = false;
+    santaLayer.render(santa);
+    syncInteraction();
+  }
+
   pileTimer += dt;
   if (sim.ledges.boxes.length > 0 || pileTimer >= PILE_REDRAW_INTERVAL) {
     pileTimer = 0;
@@ -212,14 +245,16 @@ const loop = new FrameLoop((dt) => {
         `${renderer.kind}  ${fps.toFixed(0)} fps  cap ${loop.fpsCap}${power.battery ? " (battery)" : ""}\n` +
         `snow ${settings.enabled ? "on" : "off"}  flakes ${sim.pool.count}  ${settings.intensity}  wind ${sim.windNow.toFixed(0)} px/s\n` +
         `ledges ${sim.ledges.list.length}  pile redraws ${(pileDraws / fpsTime).toFixed(0)}/s\n` +
-        `monitors ${layout.monitors.length}  ${layout.width}×${layout.height}` +
-        (bridge.native ? "" : "\nkeys: S 1 2 3 ←→ W T O I N F X P B");
+        `monitors ${layout.monitors.length}  ${layout.width}×${layout.height}
+` +
+        `santa ${santaAllowed() ? `in ${Math.max(0, santa.nextAt - now()).toFixed(0)} s` : "off"}  gifts ${santa.gifts.length}` +
+        (bridge.native ? "" : "\nkeys: S 1 2 3 ←→ W T O I N F X P B A M");
       fpsFrames = 0;
       fpsTime = 0;
       pileDraws = 0;
     }
   }
-  const more = !sim.idle || yard.busy;
+  const more = !sim.idle || yard.busy || santa.busy;
   if (!more && debug) debugEl.textContent += "\n(idle: render loop stopped)";
   return more;
 });
@@ -234,7 +269,7 @@ async function start(): Promise<void> {
   applySettings(boot.settings);
   if (debug) {
     // Console access for tuning and perf checks.
-    Object.assign(window, { __frostbite: { sim, renderer, piles, yard, yardRenderer, loop, layout: () => layout } });
+    Object.assign(window, { __frostbite: { sim, renderer, piles, yard, yardRenderer, santa, loop, layout: () => layout } });
   }
 
   bridge.onLayout(applyLayout);
@@ -246,10 +281,14 @@ async function start(): Promise<void> {
     yard.clear();
     wake();
   });
+  bridge.onSantaNow(() => {
+    if (santaAllowed() && santa.launch(now())) wake();
+  });
   bridge.onCursor((c) => {
     sim.setCursor(c);
     yard.setCursor(c.x, c.y);
-    if (yard.enabled) wake();
+    santa.setCursor(c.x, c.y);
+    if (yard.enabled || santa.gifts.length) wake();
   });
   installPointer();
   window.addEventListener("resize", resize);
@@ -258,6 +297,15 @@ async function start(): Promise<void> {
     else wake();
   });
   applyPower(power);
+
+  // Santa's schedule. A 5 s check costs nothing and survives the render loop
+  // sleeping while the scene is idle.
+  setInterval(() => {
+    const t = now();
+    if (t < santa.nextAt) return;
+    if (santaAllowed() && !power.paused && !document.hidden && santa.launch(t)) wake();
+    else santa.nextAt = t + SANTA_RETRY;
+  }, 5000);
 }
 
 void start();

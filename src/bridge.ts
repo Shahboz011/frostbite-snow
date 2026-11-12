@@ -18,6 +18,8 @@ export interface Bridge {
   onPower(cb: (p: Power) => void): void;
   /** Tray "Shake off all snow". */
   onShake(cb: () => void): void;
+  /** "Send Santa now" (tray / settings window). */
+  onSantaNow(cb: () => void): void;
   setHitRegions(regions: Rect[], capture: boolean): void;
 }
 
@@ -48,6 +50,9 @@ class TauriBridge implements Bridge {
   onShake(cb: () => void) {
     void listen("frostbite://shake", () => cb());
   }
+  onSantaNow(cb: () => void) {
+    void listen("frostbite://santa", () => cb());
+  }
   setHitRegions(regions: Rect[], capture: boolean) {
     void invoke("set_hit_regions", { regions, capture });
   }
@@ -61,7 +66,7 @@ class TauriBridge implements Bridge {
  * - `?icons=N` (default 6): fake desktop icons (drag to move), behind windows.
  * - Keys stand in for the tray menu: S snow, 1/2/3 intensity, ←/→ wind,
  *   W windows, T taskbar, O desktop icons, I icicles, N snowman, F snowball fights, X shake off,
- *   P pause (fullscreen), B battery.
+ *   P pause (fullscreen), B battery, A send Santa now, M Santa on/off.
  */
 class BrowserBridge implements Bridge {
   readonly native = false;
@@ -77,6 +82,7 @@ class BrowserBridge implements Bridge {
   private settingsCbs: ((s: Settings) => void)[] = [];
   private powerCbs: ((p: Power) => void)[] = [];
   private shakeCbs: (() => void)[] = [];
+  private santaCbs: (() => void)[] = [];
 
   constructor() {
     document.body.classList.add("preview");
@@ -133,6 +139,8 @@ class BrowserBridge implements Bridge {
       case "n": s.snowman = !s.snowman; break;
       case "f": s.snowballs = !s.snowballs; break;
       case "x": for (const cb of this.shakeCbs) cb(); return;
+      case "a": for (const cb of this.santaCbs) cb(); return;
+      case "m": s.santa = !s.santa; break;
       case "p": this.setPower({ ...this.power, paused: !this.power.paused }); return;
       case "b": this.setPower({ ...this.power, battery: !this.power.battery }); return;
       default: return;
@@ -322,6 +330,9 @@ class BrowserBridge implements Bridge {
   }
   onShake(cb: () => void) {
     this.shakeCbs.push(cb);
+  }
+  onSantaNow(cb: () => void) {
+    this.santaCbs.push(cb);
   }
   setHitRegions() {}
 }
