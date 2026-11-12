@@ -53,6 +53,8 @@ export interface Settings {
   santa: boolean;
   /** A polar bear chases a penguin that stole its fish, every 12 minutes. */
   polarChase: boolean;
+  /** A bulldozer clears the taskbar snow every 10 minutes. */
+  plow: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -69,6 +71,7 @@ export const DEFAULT_SETTINGS: Settings = {
   winterWallpaper: true,
   santa: true,
   polarChase: true,
+  plow: true,
 };
 
 export interface Power {

@@ -22,6 +22,8 @@ export interface Bridge {
   onSantaNow(cb: () => void): void;
   /** "Play the polar chase now". */
   onPolarNow(cb: () => void): void;
+  /** "Send the snow plow now". */
+  onPlowNow(cb: () => void): void;
   setHitRegions(regions: Rect[], capture: boolean): void;
 }
 
@@ -58,6 +60,9 @@ class TauriBridge implements Bridge {
   onPolarNow(cb: () => void) {
     void listen("frostbite://polar", () => cb());
   }
+  onPlowNow(cb: () => void) {
+    void listen("frostbite://plow", () => cb());
+  }
   setHitRegions(regions: Rect[], capture: boolean) {
     void invoke("set_hit_regions", { regions, capture });
   }
@@ -71,7 +76,7 @@ class TauriBridge implements Bridge {
  * - `?icons=N` (default 6): fake desktop icons (drag to move), behind windows.
  * - Keys stand in for the tray menu: S snow, 1/2/3 intensity, ←/→ wind,
  *   W windows, T taskbar, O desktop icons, I icicles, N snowman, F snowball fights, X shake off,
- *   P pause (fullscreen), B battery, A send Santa now, M Santa on/off, C polar chase now.
+ *   P pause (fullscreen), B battery, A send Santa now, M Santa on/off, C polar chase now, D snow plow now.
  */
 class BrowserBridge implements Bridge {
   readonly native = false;
@@ -89,6 +94,7 @@ class BrowserBridge implements Bridge {
   private shakeCbs: (() => void)[] = [];
   private santaCbs: (() => void)[] = [];
   private polarCbs: (() => void)[] = [];
+  private plowCbs: (() => void)[] = [];
 
   constructor() {
     document.body.classList.add("preview");
@@ -148,6 +154,7 @@ class BrowserBridge implements Bridge {
       case "a": for (const cb of this.santaCbs) cb(); return;
       case "m": s.santa = !s.santa; break;
       case "c": for (const cb of this.polarCbs) cb(); return;
+      case "d": for (const cb of this.plowCbs) cb(); return;
       case "p": this.setPower({ ...this.power, paused: !this.power.paused }); return;
       case "b": this.setPower({ ...this.power, battery: !this.power.battery }); return;
       default: return;
@@ -343,6 +350,9 @@ class BrowserBridge implements Bridge {
   }
   onPolarNow(cb: () => void) {
     this.polarCbs.push(cb);
+  }
+  onPlowNow(cb: () => void) {
+    this.plowCbs.push(cb);
   }
   setHitRegions() {}
 }

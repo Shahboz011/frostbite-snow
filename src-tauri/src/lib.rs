@@ -32,6 +32,7 @@ pub fn run() {
             commands::update_settings,
             commands::send_santa,
             commands::send_polar,
+            commands::send_plow,
             commands::shake_snow,
             commands::quit_app,
         ])

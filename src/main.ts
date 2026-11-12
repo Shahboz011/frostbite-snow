@@ -8,6 +8,7 @@ import { YardRenderer } from "./snow/yardRender";
 import { Santa } from "./snow/santa";
 import { SantaLayer } from "./snow/santaLayer";
 import { PolarChase, PolarLayer } from "./snow/polar";
+import { PlowLayer, SnowPlow } from "./snow/plow";
 import { DEFAULT_SETTINGS } from "./types";
 import type { Layout, Power, Settings, Surfaces } from "./types";
 
@@ -16,6 +17,7 @@ const pileCanvas = document.getElementById("piles") as HTMLCanvasElement;
 const objectCanvas = document.getElementById("objects") as HTMLCanvasElement;
 const santaCanvas = document.getElementById("santa") as HTMLCanvasElement;
 const critterCanvas = document.getElementById("critters") as HTMLCanvasElement;
+const plowCanvas = document.getElementById("plow") as HTMLCanvasElement;
 const debugEl = document.getElementById("debug") as HTMLDivElement;
 
 const bridge = createBridge();
@@ -42,6 +44,14 @@ const santa = new Santa(sim.ledges, (x, y, vx, vy, m, k) => sim.emitClump(x, y, 
 const santaLayer = new SantaLayer(santaCanvas);
 const polar = new PolarChase(sim.ledges, (x, y, vx, vy, m, k) => sim.emitClump(x, y, vx, vy, m, k), now());
 const polarLayer = new PolarLayer(critterCanvas);
+// Snowmen on the ground are obstacles the plow lifts its blade for.
+const plow = new SnowPlow(
+  sim.ledges,
+  (x, y, vx, vy, m, k) => sim.emitClump(x, y, vx, vy, m, k),
+  () => yard.stacks.map((s) => [s.balls[0].x - s.balls[0].r - 6 * s.balls[0].k, s.balls[0].x + s.balls[0].r + 6 * s.balls[0].k] as [number, number]),
+  now(),
+);
+const plowLayer = new PlowLayer(plowCanvas);
 /** If a flight comes due while it can't happen (fullscreen app, off), try again this soon. */
 const SANTA_RETRY = 60;
 
@@ -51,6 +61,10 @@ function santaAllowed(): boolean {
 
 function polarAllowed(): boolean {
   return settings.polarChase && settings.enabled;
+}
+
+function plowAllowed(): boolean {
+  return settings.plow && settings.enabled && settings.snowOnTaskbar;
 }
 
 /** Start rendering unless paused (fullscreen app / lock screen). */
@@ -72,6 +86,8 @@ function resize(): void {
   santa.dirty = true;
   polarLayer.resize(w, h, s);
   polar.dirty = true;
+  plowLayer.resize(w, h, s);
+  plow.dirty = true;
   yard.dirty = true;
   if (debug) drawMonitorOutlines();
   wake();
@@ -82,6 +98,7 @@ function applyLayout(l: Layout): void {
   sim.setLayout(l);
   santa.setLayout(l);
   polar.setLayout(l);
+  plow.setLayout(l);
   yard.bounds = { w: l.width, h: l.height };
   sim.ledges.setLayout(l, surfaces, now());
   resize();
@@ -92,6 +109,7 @@ function applySurfaces(s: Surfaces): void {
   sim.ledges.sync(s, now());
   santa.setSurfaces(s);
   polar.setSurfaces(s);
+  plow.setSurfaces(s);
   wake();
 }
 
@@ -113,6 +131,7 @@ function applySettings(s: Settings): void {
   yard.throwing = s.snowballs;
   if (!santaAllowed()) santa.clear();
   if (!polarAllowed()) polar.clear();
+  if (!plowAllowed()) plow.clear();
   updateFpsCap();
   wake();
 }
@@ -257,6 +276,12 @@ const loop = new FrameLoop((dt) => {
     syncInteraction();
   }
 
+  plow.update(dt);
+  if (plow.dirty) {
+    plow.dirty = false;
+    plowLayer.render(plow);
+  }
+
   pileTimer += dt;
   if (sim.ledges.boxes.length > 0 || pileTimer >= PILE_REDRAW_INTERVAL) {
     pileTimer = 0;
@@ -274,14 +299,14 @@ const loop = new FrameLoop((dt) => {
         `ledges ${sim.ledges.list.length}  pile redraws ${(pileDraws / fpsTime).toFixed(0)}/s\n` +
         `monitors ${layout.monitors.length}  ${layout.width}×${layout.height}
 ` +
-        `santa ${santaAllowed() ? `in ${Math.max(0, santa.nextAt - now()).toFixed(0)} s` : "off"}  gifts ${santa.gifts.length}  chase ${polar.scene ? polar.scene.stage : polarAllowed() ? `in ${Math.max(0, polar.nextAt - now()).toFixed(0)} s` : "off"}` +
-        (bridge.native ? "" : "\nkeys: S 1 2 3 ←→ W T O I N F X P B A M C");
+        `santa ${santaAllowed() ? `in ${Math.max(0, santa.nextAt - now()).toFixed(0)} s` : "off"}  gifts ${santa.gifts.length}  chase ${polar.scene ? polar.scene.stage : polarAllowed() ? `in ${Math.max(0, polar.nextAt - now()).toFixed(0)} s` : "off"}  plow ${plow.run ? "driving" : plowAllowed() ? `in ${Math.max(0, plow.nextAt - now()).toFixed(0)} s` : "off"}` +
+        (bridge.native ? "" : "\nkeys: S 1 2 3 ←→ W T O I N F X P B A M C D");
       fpsFrames = 0;
       fpsTime = 0;
       pileDraws = 0;
     }
   }
-  const more = !sim.idle || yard.busy || santa.busy || polar.busy;
+  const more = !sim.idle || yard.busy || santa.busy || polar.busy || plow.busy;
   if (!more && debug) debugEl.textContent += "\n(idle: render loop stopped)";
   return more;
 });
@@ -296,7 +321,7 @@ async function start(): Promise<void> {
   applySettings(boot.settings);
   if (debug) {
     // Console access for tuning and perf checks.
-    Object.assign(window, { __frostbite: { sim, renderer, piles, yard, yardRenderer, santa, polar, loop, layout: () => layout } });
+    Object.assign(window, { __frostbite: { sim, renderer, piles, yard, yardRenderer, santa, polar, plow, loop, layout: () => layout } });
   }
 
   bridge.onLayout(applyLayout);
@@ -313,6 +338,9 @@ async function start(): Promise<void> {
   });
   bridge.onPolarNow(() => {
     if (polarAllowed() && polar.start(now())) wake();
+  });
+  bridge.onPlowNow(() => {
+    if (plowAllowed() && plow.start(now())) wake();
   });
   bridge.onCursor((c) => {
     sim.setCursor(c);
@@ -342,6 +370,13 @@ async function start(): Promise<void> {
     // Never at the same time as Santa's flight.
     if (polarAllowed() && !power.paused && !document.hidden && !santa.flight && polar.start(t)) wake();
     else polar.nextAt = t + SANTA_RETRY;
+  }, 5000);
+  setInterval(() => {
+    const t = now();
+    if (t < plow.nextAt) return;
+    // Not while the polar bear and penguin are on the taskbar.
+    if (plowAllowed() && !power.paused && !document.hidden && !polar.scene && plow.start(t)) wake();
+    else plow.nextAt = t + SANTA_RETRY;
   }, 5000);
 }
 

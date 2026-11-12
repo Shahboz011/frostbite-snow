@@ -20,6 +20,7 @@ pub struct TrayItems {
     wallpaper: CheckMenuItem<Wry>,
     santa: CheckMenuItem<Wry>,
     polar: CheckMenuItem<Wry>,
+    plow: CheckMenuItem<Wry>,
     startup: Option<CheckMenuItem<Wry>>,
 }
 
@@ -59,6 +60,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let santa = check("santa", "Santa (every 10 min)", s.santa)?;
     let santa_now = MenuItemBuilder::with_id("santa-now", "Send Santa now").build(app)?;
     let polar = check("polar", "Fish thief (every 12 min)", s.polar_chase)?;
+    let plow = check("plow", "Snow plow (every 10 min)", s.plow)?;
     let open_settings = MenuItemBuilder::with_id("settings", "Settings…").build(app)?;
     let platform_autostart = app.state::<AppState>().platform.autostart_enabled();
     let startup = match platform_autostart {
@@ -94,6 +96,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .item(&santa)
         .item(&santa_now)
         .item(&polar)
+        .item(&plow)
         .separator()
         .item(&wallpaper);
     if let Some(st) = &startup {
@@ -129,6 +132,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         wallpaper,
         santa,
         polar,
+        plow,
         startup,
     });
     Ok(())
@@ -144,6 +148,7 @@ fn on_menu(app: &AppHandle<Wry>, id: &str) {
         }
         "santa" => update(app, |s| s.santa = !s.santa),
         "polar" => update(app, |s| s.polar_chase = !s.polar_chase),
+        "plow" => update(app, |s| s.plow = !s.plow),
         "shake" => {
             use tauri::Emitter;
             let _ = app.emit_to(crate::OVERLAY_LABEL, "frostbite://shake", ());
@@ -197,6 +202,7 @@ pub fn sync(app: &AppHandle<Wry>, s: &Settings) {
     let _ = t.wallpaper.set_checked(s.winter_wallpaper);
     let _ = t.santa.set_checked(s.santa);
     let _ = t.polar.set_checked(s.polar_chase);
+    let _ = t.plow.set_checked(s.plow);
     if let Some(st) = &t.startup {
         let _ = st.set_checked(s.launch_at_startup);
     }
