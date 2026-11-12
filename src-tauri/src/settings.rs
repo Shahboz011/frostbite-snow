@@ -29,6 +29,9 @@ pub struct Settings {
     pub icicles: bool,
     pub snowballs: bool,
     pub launch_at_startup: bool,
+    /// Show the bundled winter wallpaper (applied on first run; turning it off
+    /// restores the user's own).
+    pub winter_wallpaper: bool,
 }
 
 impl Default for Settings {
@@ -44,6 +47,7 @@ impl Default for Settings {
             icicles: true,
             snowballs: false,
             launch_at_startup: false,
+            winter_wallpaper: true,
         }
     }
 }

@@ -48,6 +48,7 @@ export interface Settings {
   icicles: boolean;
   snowballs: boolean;
   launchAtStartup: boolean;
+  winterWallpaper: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -61,6 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   icicles: true,
   snowballs: false,
   launchAtStartup: false,
+  winterWallpaper: true,
 };
 
 export interface Power {

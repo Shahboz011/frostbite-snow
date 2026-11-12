@@ -178,6 +178,11 @@ pub trait Platform: Send + Sync {
     /// not running, access denied); the app then skips icon snow.
     /// Called ~1 Hz and only while icon snow is enabled.
     fn desktop_icons(&self) -> Option<Vec<Rect>>;
+
+    /// Show `image` as the desktop wallpaper, remembering the user's own one.
+    fn set_wallpaper(&self, image: &std::path::Path) -> Result<()>;
+    /// Put the user's own wallpaper back (unless they changed it since).
+    fn restore_wallpaper(&self) -> Result<()>;
 }
 
 /// The backend for the current OS.

@@ -17,6 +17,7 @@ pub struct TrayItems {
     snowman: CheckMenuItem<Wry>,
     icicles: CheckMenuItem<Wry>,
     snowballs: CheckMenuItem<Wry>,
+    wallpaper: CheckMenuItem<Wry>,
     startup: Option<CheckMenuItem<Wry>>,
 }
 
@@ -52,6 +53,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let snowman = check("snowman", "Snowman", s.snowman)?;
     let icicles = check("icicles", "Icicles", s.icicles)?;
     let snowballs = check("snowballs", "Snowball fights", s.snowballs)?;
+    let wallpaper = check("wallpaper", "Winter wallpaper", s.winter_wallpaper)?;
     let platform_autostart = app.state::<AppState>().platform.autostart_enabled();
     let startup = match platform_autostart {
         Some(on) => Some(check("startup", "Launch at startup", on)?),
@@ -81,6 +83,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .item(&snowman)
         .item(&icicles)
         .item(&snowballs)
+        .item(&wallpaper)
         .separator();
     if let Some(st) = &startup {
         menu = menu.item(st);
@@ -112,6 +115,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<()> {
         snowman,
         icicles,
         snowballs,
+        wallpaper,
         startup,
     });
     Ok(())
@@ -131,6 +135,7 @@ fn on_menu(app: &AppHandle<Wry>, id: &str) {
         "snowman" => update(app, |s| s.snowman = !s.snowman),
         "icicles" => update(app, |s| s.icicles = !s.icicles),
         "snowballs" => update(app, |s| s.snowballs = !s.snowballs),
+        "wallpaper" => update(app, |s| s.winter_wallpaper = !s.winter_wallpaper),
         "startup" => update(app, |s| s.launch_at_startup = !s.launch_at_startup),
         "int:light" => update(app, |s| s.intensity = Intensity::Light),
         "int:normal" => update(app, |s| s.intensity = Intensity::Normal),
@@ -169,6 +174,7 @@ pub fn sync(app: &AppHandle<Wry>, s: &Settings) {
     let _ = t.snowman.set_checked(s.snowman);
     let _ = t.icicles.set_checked(s.icicles);
     let _ = t.snowballs.set_checked(s.snowballs);
+    let _ = t.wallpaper.set_checked(s.winter_wallpaper);
     if let Some(st) = &t.startup {
         let _ = st.set_checked(s.launch_at_startup);
     }

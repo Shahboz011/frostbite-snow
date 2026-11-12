@@ -40,4 +40,10 @@ impl Platform for StubPlatform {
     fn desktop_icons(&self) -> Option<Vec<Rect>> {
         None
     }
+    fn set_wallpaper(&self, _image: &std::path::Path) -> Result<()> {
+        Err(PlatformError("wallpaper not supported on this platform yet".into()))
+    }
+    fn restore_wallpaper(&self) -> Result<()> {
+        Ok(())
+    }
 }

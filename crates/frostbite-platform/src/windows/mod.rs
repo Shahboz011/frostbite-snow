@@ -9,6 +9,7 @@ use std::sync::Mutex;
 mod icons;
 mod surfaces;
 mod system;
+mod wallpaper;
 
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
@@ -158,6 +159,14 @@ impl Platform for WindowsPlatform {
 
     fn set_autostart(&self, enable: bool) -> Result<()> {
         system::set_autostart(enable)
+    }
+
+    fn set_wallpaper(&self, image: &std::path::Path) -> Result<()> {
+        wallpaper::apply(image)
+    }
+
+    fn restore_wallpaper(&self) -> Result<()> {
+        wallpaper::restore()
     }
 
     fn desktop_icons(&self) -> Option<Vec<Rect>> {
